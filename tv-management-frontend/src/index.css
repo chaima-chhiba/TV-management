@@ -1,0 +1,17 @@
+body {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+/* Add to index.css */
+@media (max-width: 700px) {
+  .sidebar {
+    width: 60px !important;
+    padding: 1rem 0.5rem !important;
+  }
+}
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
