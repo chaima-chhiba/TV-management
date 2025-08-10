@@ -7,8 +7,9 @@ import { logout } from '../services/authService';
 const navLinks = [
   { to: '/', label: 'Dashboard', icon: Monitor },
   { to: '/tvs', label: 'TVs', icon: Monitor },
-  { to: '/profile', label: 'Profile', icon: Files},
+  
   { to: '/content', label: 'Content', icon: Upload },
+  { to: '/profile', label: 'Profile', icon: Files},
   { to: '/scheduler', label: 'Scheduler', icon: Calendar }
 ];
 

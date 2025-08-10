@@ -4,35 +4,45 @@ import ContentCard from '../components/ContentCard'; // adjust path as needed
 export default function ContentLibrary() {
   const [content, setContent] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
   const [newContent, setNewContent] = useState({
     title: '',
     type: 'text',
     content: '',
     duration: 10,
+    url: '',
   });
 
   const addContent = () => {
     if (newContent.title) {
-      setContent([
-        ...content,
-        {
-          id: Date.now(),
-          ...newContent,
-          createdAt: new Date().toISOString(),
-          url:
-            newContent.type === 'image'
-              ? 'https://via.placeholder.com/800x600/6366f1/white?text=' +
-                encodeURIComponent(newContent.title)
-              : undefined,
-        },
-      ]);
-      setNewContent({ title: '', type: 'text', content: '', duration: 10 });
+      if (editingItem) {
+        setContent(content.map((item) =>
+          item.id === editingItem.id ? { ...newContent, id: editingItem.id } : item
+        ));
+      } else {
+        setContent([
+          ...content,
+          {
+            id: Date.now(),
+            ...newContent,
+            createdAt: new Date().toISOString(),
+          },
+        ]);
+      }
+      setNewContent({ title: '', type: 'text', content: '', duration: 10, url: '' });
+      setEditingItem(null);
       setShowAddForm(false);
     }
   };
 
   const deleteContent = (id) => {
     setContent(content.filter((item) => item.id !== id));
+  };
+
+  const handleEdit = (item) => {
+    setNewContent(item);
+    setEditingItem(item);
+    setShowAddForm(true);
   };
 
   return (
@@ -57,7 +67,11 @@ export default function ContentLibrary() {
             <p style={{ fontSize: 14, color: '#64748b' }}>Manage your text, image, and video content</p>
           </div>
           <button
-            onClick={() => setShowAddForm(true)}
+            onClick={() => {
+              setShowAddForm(true);
+              setEditingItem(null);
+              setNewContent({ title: '', type: 'text', content: '', duration: 10, url: '' });
+            }}
             style={{
               background: '#4f46e5',
               color: '#fff',
@@ -73,7 +87,7 @@ export default function ContentLibrary() {
           </button>
         </div>
 
-        {/* Add Form */}
+        {/* Add/Edit Form */}
         {showAddForm && (
           <div style={{
             background: '#fff',
@@ -82,7 +96,9 @@ export default function ContentLibrary() {
             padding: 24,
             marginBottom: 32
           }}>
-            <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Add New Content</h3>
+            <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>
+              {editingItem ? 'Edit Content' : 'Add New Content'}
+            </h3>
             <div style={{ display: 'grid', gap: 16 }}>
               <input
                 type="text"
@@ -98,7 +114,7 @@ export default function ContentLibrary() {
               />
               <select
                 value={newContent.type}
-                onChange={(e) => setNewContent({ ...newContent, type: e.target.value })}
+                onChange={(e) => setNewContent({ ...newContent, type: e.target.value, url: '', content: '' })}
                 style={{
                   padding: 10,
                   borderRadius: 8,
@@ -136,6 +152,25 @@ export default function ContentLibrary() {
                   }}
                 />
               )}
+              {(newContent.type === 'image' || newContent.type === 'video') && (
+                <input
+                  type="file"
+                  accept={newContent.type === 'image' ? 'image/*' : 'video/*'}
+                  onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                      const url = URL.createObjectURL(file);
+                      setNewContent({ ...newContent, url });
+                    }
+                  }}
+                  style={{
+                    padding: 10,
+                    borderRadius: 8,
+                    border: '1px solid #d1d5db',
+                    fontSize: 14
+                  }}
+                />
+              )}
               <div style={{ display: 'flex', gap: 12 }}>
                 <button
                   onClick={addContent}
@@ -149,10 +184,14 @@ export default function ContentLibrary() {
                     cursor: 'pointer'
                   }}
                 >
-                  Add
+                  {editingItem ? 'Update' : 'Add'}
                 </button>
                 <button
-                  onClick={() => setShowAddForm(false)}
+                  onClick={() => {
+                    setShowAddForm(false);
+                    setEditingItem(null);
+                    setNewContent({ title: '', type: 'text', content: '', duration: 10, url: '' });
+                  }}
                   style={{
                     background: '#e5e7eb',
                     color: '#374151',
@@ -173,7 +212,7 @@ export default function ContentLibrary() {
         {/* Content Cards */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
           {content.map(item => (
-            <ContentCard key={item.id} item={item} onDelete={deleteContent} />
+            <ContentCard key={item.id} item={item} onDelete={deleteContent} onEdit={handleEdit} />
           ))}
           {content.length === 0 && (
             <div style={{
