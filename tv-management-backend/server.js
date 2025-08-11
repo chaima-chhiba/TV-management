@@ -6,6 +6,7 @@ const authRoutes = require('./routes/auth');
 const contentRoutes = require('./routes/content');
 const tvRoutes = require('./routes/tv');
 const scheduleRoutes = require('./routes/schedule');
+const profileRoutes = require('./routes/profileRoutes');
 const { authenticateJWT } = require('./middleware/authMiddleware');
 
 dotenv.config();
@@ -19,6 +20,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/content', authenticateJWT, contentRoutes);
 app.use('/api/tv', authenticateJWT, tvRoutes);
 app.use('/api/schedule', authenticateJWT, scheduleRoutes);
+app.use('/api/profiles',authenticateJWT, profileRoutes);
 
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
@@ -29,3 +31,5 @@ mongoose.connect(process.env.MONGO_URI, {
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 })
 .catch((err) => console.error('MongoDB connection error:', err));
+app.use(express.json({ limit: '12mb' }));
+app.use(express.urlencoded({ extended: true, limit: '12mb' }));

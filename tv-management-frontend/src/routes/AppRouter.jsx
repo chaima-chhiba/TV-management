@@ -5,6 +5,7 @@ import TVs from '../pages/TVs';
 import ContentLibrary from '../pages/ContentLibrary';
 import Login from '../pages/Login';
 import ProtectedRoute from '../components/ProtectedRoute';
+import Display from '../pages/Display';
 
 export default function AppRouter() {
   return (
@@ -27,7 +28,7 @@ export default function AppRouter() {
             </ProtectedRoute>
           }
         />
-           <Route
+        <Route
           path="/content"
           element={
             <ProtectedRoute>
@@ -35,6 +36,7 @@ export default function AppRouter() {
             </ProtectedRoute>
           }
         />
+        <Route path="/display/:tvId" element={<Display />} />
         {/* Add other routes here, e.g. Content, Scheduler, Profile */}
       </Routes>
     </BrowserRouter>

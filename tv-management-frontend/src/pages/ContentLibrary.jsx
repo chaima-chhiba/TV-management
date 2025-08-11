@@ -1,236 +1,166 @@
-import React, { useState } from 'react';
-import ContentCard from '../components/ContentCard'; // adjust path as needed
+import React, { useEffect, useState } from 'react';
+import { Plus, Trash2 } from 'lucide-react';
+import contentService from '../services/contentService';
+import ContentForm from '../components/ContentForm';
+import ContentCard from '../components/ContentCard';
 
 export default function ContentLibrary() {
   const [content, setContent] = useState([]);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
-  const [newContent, setNewContent] = useState({
-    title: '',
-    type: 'text',
-    content: '',
-    duration: 10,
-    url: '',
-  });
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  const addContent = () => {
-    if (newContent.title) {
-      if (editingItem) {
-        setContent(content.map((item) =>
-          item.id === editingItem.id ? { ...newContent, id: editingItem.id } : item
-        ));
-      } else {
-        setContent([
-          ...content,
-          {
-            id: Date.now(),
-            ...newContent,
-            createdAt: new Date().toISOString(),
-          },
-        ]);
-      }
-      setNewContent({ title: '', type: 'text', content: '', duration: 10, url: '' });
-      setEditingItem(null);
-      setShowAddForm(false);
+  const load = () => {
+    setLoading(true);
+    contentService.getAll()
+      .then(setContent)
+      .finally(()=>setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const handleCreateOrUpdate = async (data) => {
+  try {
+    setSaving(true);
+    if (editing) {
+      await contentService.update(editing._id || editing.id, data);
+    } else {
+      await contentService.create(data);
+    }
+    setShowForm(false);
+    setEditing(null);
+    load();
+  } catch (e) {
+    console.error(e);
+    alert('Save failed');
+  } finally {
+    setSaving(false);
+  }
+};
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this content item?')) return;
+    try {
+      await contentService.remove(id);
+      setContent(prev => prev.filter(c => (c._id || c.id) !== id));
+    } catch (e) {
+      console.error(e);
+      alert('Delete failed');
     }
   };
 
-  const deleteContent = (id) => {
-    setContent(content.filter((item) => item.id !== id));
-  };
-
-  const handleEdit = (item) => {
-    setNewContent(item);
-    setEditingItem(item);
-    setShowAddForm(true);
-  };
-
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: '#f7f9fc',
-      width: '100vw',
-      overflowX: 'hidden'
-    }}>
-      <main style={{
-        flex: 1,
-        padding: '2.5rem 2rem',
-        maxWidth: 1200,
-        margin: '0 auto',
-        width: '100%',
-        minWidth: 0
-      }}>
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
-          <div>
-            <h2 style={{ fontSize: 28, fontWeight: 700, color: '#22223b' }}>Content Library</h2>
-            <p style={{ fontSize: 14, color: '#64748b' }}>Manage your text, image, and video content</p>
-          </div>
-          <button
-            onClick={() => {
-              setShowAddForm(true);
-              setEditingItem(null);
-              setNewContent({ title: '', type: 'text', content: '', duration: 10, url: '' });
-            }}
-            style={{
-              background: '#4f46e5',
-              color: '#fff',
-              padding: '10px 16px',
-              borderRadius: 8,
-              fontWeight: 500,
-              fontSize: 14,
-              boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
-              cursor: 'pointer'
-            }}
-          >
-            + Add Content
-          </button>
-        </div>
+    <div style={{maxWidth:1300, margin:'0 auto', padding:'2.5rem 2rem'}}>
+      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24}}>
+        <h2 style={{margin:0, fontSize:28, fontWeight:700, color:'#1e293b'}}>Content Library</h2>
+        <button
+          onClick={()=>{ setShowForm(true); setEditing(null); }}
+          style={{
+            background:'#2563eb',
+            color:'#fff',
+            border:'none',
+            borderRadius:12,
+            padding:'12px 22px',
+            display:'flex',
+            gap:8,
+            fontWeight:600,
+            cursor:'pointer',
+            fontSize:15
+          }}
+        >
+          <Plus size={18}/> Add Content
+        </button>
+      </div>
 
-        {/* Add/Edit Form */}
-        {showAddForm && (
-          <div style={{
-            background: '#fff',
-            borderRadius: 12,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-            padding: 24,
-            marginBottom: 32
-          }}>
-            <h3 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>
-              {editingItem ? 'Edit Content' : 'Add New Content'}
-            </h3>
-            <div style={{ display: 'grid', gap: 16 }}>
-              <input
-                type="text"
-                placeholder="Title"
-                value={newContent.title}
-                onChange={(e) => setNewContent({ ...newContent, title: e.target.value })}
-                style={{
-                  padding: 10,
-                  borderRadius: 8,
-                  border: '1px solid #d1d5db',
-                  fontSize: 14
-                }}
-              />
-              <select
-                value={newContent.type}
-                onChange={(e) => setNewContent({ ...newContent, type: e.target.value, url: '', content: '' })}
-                style={{
-                  padding: 10,
-                  borderRadius: 8,
-                  border: '1px solid #d1d5db',
-                  fontSize: 14
-                }}
-              >
-                <option value="text">Text</option>
-                <option value="image">Image</option>
-                <option value="video">Video</option>
-              </select>
-              <input
-                type="number"
-                placeholder="Duration (seconds)"
-                value={newContent.duration}
-                onChange={(e) => setNewContent({ ...newContent, duration: parseInt(e.target.value) })}
-                style={{
-                  padding: 10,
-                  borderRadius: 8,
-                  border: '1px solid #d1d5db',
-                  fontSize: 14
-                }}
-              />
-              {newContent.type === 'text' && (
-                <textarea
-                  placeholder="Content Text"
-                  value={newContent.content}
-                  onChange={(e) => setNewContent({ ...newContent, content: e.target.value })}
-                  style={{
-                    padding: 10,
-                    borderRadius: 8,
-                    border: '1px solid #d1d5db',
-                    fontSize: 14,
-                    height: 80
-                  }}
-                />
-              )}
-              {(newContent.type === 'image' || newContent.type === 'video') && (
-                <input
-                  type="file"
-                  accept={newContent.type === 'image' ? 'image/*' : 'video/*'}
-                  onChange={(e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                      const url = URL.createObjectURL(file);
-                      setNewContent({ ...newContent, url });
-                    }
-                  }}
-                  style={{
-                    padding: 10,
-                    borderRadius: 8,
-                    border: '1px solid #d1d5db',
-                    fontSize: 14
-                  }}
-                />
-              )}
-              <div style={{ display: 'flex', gap: 12 }}>
-                <button
-                  onClick={addContent}
-                  style={{
-                    background: '#22c55e',
-                    color: '#fff',
-                    padding: '8px 16px',
-                    borderRadius: 8,
-                    fontWeight: 500,
-                    fontSize: 14,
-                    cursor: 'pointer'
-                  }}
-                >
-                  {editingItem ? 'Update' : 'Add'}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowAddForm(false);
-                    setEditingItem(null);
-                    setNewContent({ title: '', type: 'text', content: '', duration: 10, url: '' });
-                  }}
-                  style={{
-                    background: '#e5e7eb',
-                    color: '#374151',
-                    padding: '8px 16px',
-                    borderRadius: 8,
-                    fontWeight: 500,
-                    fontSize: 14,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+      {showForm && (
+        <ContentForm
+          initial={editing}
+          onSubmit={handleCreateOrUpdate}
+            onCancel={()=>{ setShowForm(false); setEditing(null); }}
+          submitting={saving}
+        />
+      )}
 
-        {/* Content Cards */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-          {content.map(item => (
-            <ContentCard key={item.id} item={item} onDelete={deleteContent} onEdit={handleEdit} />
-          ))}
-          {content.length === 0 && (
+      {!showForm && (
+        <>
+          {loading && <div style={{padding:24}}>Loading content...</div>}
+          {!loading && content.length === 0 && (
             <div style={{
-              flex: '1 1 100%',
-              background: '#f5f7fa',
-              borderRadius: 8,
-              padding: 16,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#64748b',
-              fontSize: 14
+              background:'#fff',
+              padding:40,
+              borderRadius:16,
+              textAlign:'center',
+              boxShadow:'0 2px 8px rgba(0,0,0,0.06)'
             }}>
-              No content added yet. Click “Add Content” to get started.
+              <div style={{fontSize:48}}>🗂️</div>
+              <h3 style={{margin:'12px 0 4px', fontSize:20, fontWeight:600, color:'#334155'}}>No content yet</h3>
+              <p style={{margin:0, color:'#64748b'}}>Click "Add Content" to create your first item.</p>
             </div>
           )}
-        </div>
-      </main>
+          <div style={{
+            display:'grid',
+            gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',
+            gap:24,
+            marginTop:content.length?24:0
+          }}>
+            {content.map(item=>(
+              <div key={item._id || item.id} style={{position:'relative'}}>
+                <ContentCard
+                  item={{
+                    ...item,
+                    id: item._id || item.id
+                  }}
+                  onDelete={()=>handleDelete(item._id || item.id)}
+                />
+                <div style={{
+                  position:'absolute',
+                  top:10,
+                  right:10,
+                  display:'flex',
+                  gap:8
+                }}>
+                  <button
+                    onClick={()=>{ setEditing(item); setShowForm(true); }}
+                    style={{
+                      background:'#e0e7ff',
+                      color:'#3730a3',
+                      border:'none',
+                      borderRadius:8,
+                      padding:'6px 10px',
+                      fontSize:12,
+                      cursor:'pointer',
+                      fontWeight:500
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={()=>handleDelete(item._id || item.id)}
+                    style={{
+                      background:'#fee2e2',
+                      color:'#b91c1c',
+                      border:'none',
+                      borderRadius:8,
+                      padding:'6px 10px',
+                      fontSize:12,
+                      cursor:'pointer',
+                      fontWeight:500,
+                      display:'flex',
+                      alignItems:'center',
+                      gap:4
+                    }}
+                  >
+                    <Trash2 size={14}/> Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -1,85 +1,60 @@
-// components/ContentCard.jsx
+// (Minor tweak to support id/_id already done via wrapper above; kept same structure)
 import React from 'react';
 
 export default function ContentCard({ item, onDelete }) {
   return (
     <div
       style={{
-        background: '#fff',
-        borderRadius: 12,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-        padding: 16,
-        flex: '1 1 220px'
+        background:'#fff',
+        borderRadius:16,
+        boxShadow:'0 2px 8px rgba(0,0,0,0.06)',
+        padding:16,
+        display:'flex',
+        flexDirection:'column',
+        gap:12
       }}
     >
-      {/* Header */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontWeight: 600, fontSize: 16 }}>{item.title}</div>
-        <div style={{ fontSize: 13, color: '#64748b' }}>
-          {item.type.toUpperCase()} • {item.duration}s
+      <div>
+        <div style={{fontWeight:600, fontSize:16, color:'#1e293b'}}>{item.title}</div>
+        <div style={{fontSize:12, fontWeight:500, letterSpacing:.5, color:'#6366f1'}}>
+          {item.type?.toUpperCase()} • {item.layout || '-'}
         </div>
       </div>
-
-      {/* Preview */}
-      <div style={{ marginBottom: 12 }}>
-        {item.type === 'image' && item.url && (
-          <img src={item.url} alt={item.title} style={{ width: '100%', borderRadius: 8 }} />
-        )}
-        {item.type === 'text' && (
-          <div
-            style={{
-              background: '#f5f7fa',
-              padding: 12,
-              borderRadius: 8,
-              fontSize: 14,
-              color: '#374151'
-            }}
-          >
-            {item.content}
-          </div>
-        )}
-        {item.type === 'video' && (
-          <div
-            style={{
-              background: '#000',
-              color: '#fff',
-              padding: 12,
-              borderRadius: 8,
-              fontSize: 14,
-              textAlign: 'center'
-            }}
-          >
-            Video: {item.url || 'No URL'}
-          </div>
-        )}
-      </div>
-
-      {/* Actions */}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button
-          style={{
-            background: '#e0e7ff',
-            color: '#3730a3',
-            borderRadius: 6,
-            padding: '4px 10px',
-            fontSize: 13
-          }}
-        >
-          Edit
-        </button>
-        <button
-          onClick={() => onDelete(item.id)}
-          style={{
-            background: '#fecaca',
-            color: '#991b1b',
-            borderRadius: 6,
-            padding: '4px 10px',
-            fontSize: 13
-          }}
-        >
-          Delete
-        </button>
-      </div>
+    {item.type === 'image' && (item.mediaDataUrl || item.url) && (
+  <img
+    src={item.mediaDataUrl || item.url}
+    alt={item.title}
+    style={{width:'100%', borderRadius:10}}
+  />
+)}
+{item.type === 'video' && (item.mediaDataUrl || item.url) && (
+  <video
+    src={item.mediaDataUrl || item.url}
+    style={{width:'100%', borderRadius:10}}
+    controls
+  />
+)}
+      {item.type === 'text' && item.content && (
+        <div style={{
+          background:'#f1f5f9',
+          padding:12,
+          borderRadius:10,
+          fontSize:14,
+          color:'#334155',
+          lineHeight:1.4,
+          maxHeight:140,
+          overflow:'auto'
+        }}>
+          {item.content}
+        </div>
+      )}
+  
+      {item.description && (
+        <div style={{fontSize:12, color:'#64748b'}}>
+          {item.description.length > 80 ? item.description.slice(0,80)+'...' : item.description}
+        </div>
+      )}
+     
     </div>
   );
 }
