@@ -111,7 +111,7 @@ const TVCard = ({ tv, onEdit, onDelete, isSelected, onSelect }) => {
           </button>
           
           <button
-            onClick={() => window.open(`/display/${tv.id}`, '_blank')}
+            onClick={() => window.open(`/display/${tv._id || tv.id}`, '_blank')}
             className="flex-1 bg-green-100 hover:bg-green-200 text-green-700 px-3 py-2 rounded text-sm font-medium transition-colors flex items-center justify-center space-x-1"
           >
             <Monitor size={14} />

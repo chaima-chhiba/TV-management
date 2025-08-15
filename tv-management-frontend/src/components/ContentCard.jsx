@@ -1,6 +1,32 @@
 // (Minor tweak to support id/_id already done via wrapper above; kept same structure)
 import React from 'react';
 
+function getMediaSrc(item) {
+  if (item?.mediaDataUrl) return item.mediaDataUrl;
+  if (item?.filePath) return `http://localhost:5000/${item.filePath}`;
+  if (item?.url) return item.url;
+  // Build data URL from Buffer-like object
+  if (item?.media?.data && item?.media?.contentType) {
+    const mime = item.media.contentType;
+    const data = item.media.data;
+    if (typeof data === 'string') {
+      return `data:${mime};base64,${data}`;
+    }
+    // Mongoose Buffer JSON: { type:'Buffer', data:[...numbers] }
+    const arr = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : null;
+    if (arr) {
+      const bytes = new Uint8Array(arr);
+      let binary = '';
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+      }
+      return `data:${mime};base64,${btoa(binary)}`;
+    }
+  }
+  return '';
+}
+
 export default function ContentCard({ item, onDelete }) {
   return (
     <div
@@ -20,20 +46,21 @@ export default function ContentCard({ item, onDelete }) {
           {item.type?.toUpperCase()} • {item.layout || '-'}
         </div>
       </div>
-    {item.type === 'image' && (item.mediaDataUrl || item.url) && (
-  <img
-    src={item.mediaDataUrl || item.url}
-    alt={item.title}
-    style={{width:'100%', borderRadius:10}}
-  />
-)}
-{item.type === 'video' && (item.mediaDataUrl || item.url) && (
-  <video
-    src={item.mediaDataUrl || item.url}
-    style={{width:'100%', borderRadius:10}}
-    controls
-  />
-)}
+      {item.type === 'image' && (
+        <img
+          src={getMediaSrc(item)}
+          alt={item.title}
+          style={{width:'100%', borderRadius:10}}
+          onError={(e)=>{ e.currentTarget.style.opacity='0.4'; }}
+        />
+      )}
+      {item.type === 'video' && (
+        <video
+          src={getMediaSrc(item)}
+          style={{width:'100%', borderRadius:10}}
+          controls
+        />
+      )}
       {item.type === 'text' && item.content && (
         <div style={{
           background:'#f1f5f9',
@@ -48,13 +75,11 @@ export default function ContentCard({ item, onDelete }) {
           {item.content}
         </div>
       )}
-  
       {item.description && (
         <div style={{fontSize:12, color:'#64748b'}}>
           {item.description.length > 80 ? item.description.slice(0,80)+'...' : item.description}
         </div>
       )}
-     
     </div>
   );
 }

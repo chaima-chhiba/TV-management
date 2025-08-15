@@ -13,14 +13,17 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Set body size limit BEFORE routes (increase as needed)
+const BODY_LIMIT = process.env.BODY_LIMIT || '50mb';
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: BODY_LIMIT }));
+app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/content', authenticateJWT, contentRoutes);
 app.use('/api/tv', authenticateJWT, tvRoutes);
 app.use('/api/schedule', authenticateJWT, scheduleRoutes);
-app.use('/api/profiles',authenticateJWT, profileRoutes);
+app.use('/api/profiles', authenticateJWT, profileRoutes);
 
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
@@ -31,5 +34,3 @@ mongoose.connect(process.env.MONGO_URI, {
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 })
 .catch((err) => console.error('MongoDB connection error:', err));
-app.use(express.json({ limit: '12mb' }));
-app.use(express.urlencoded({ extended: true, limit: '12mb' }));

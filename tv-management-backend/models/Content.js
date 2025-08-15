@@ -4,26 +4,28 @@ const contentSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: String,
   type: { type: String, enum: ['text', 'image', 'video'], required: true },
-  content: String,          // text body when type = text
-  url: String,              // optional external URL
+  content: String,
+  url: String,
   layout: { type: String, enum: ['fullscreen', 'split2', 'split4'], required: true },
   tv: { type: mongoose.Schema.Types.ObjectId, ref: 'TV' },
   profile: { type: mongoose.Schema.Types.ObjectId, ref: 'Profile' },
-  // Embedded media (base64 -> Buffer)
   media: {
     data: Buffer,
     contentType: String
-  }
+  },
+  duration: { type: Number, default: 8 }
 }, { timestamps: true });
 
-// Include data URL when converting to JSON
 contentSchema.set('toJSON', {
-  transform: (_, doc) => {
-    if (doc.media?.data) {
-      doc.mediaDataUrl = `data:${doc.media.contentType};base64,${doc.media.data.toString('base64')}`;
+  transform: (_doc, ret) => {
+    if (ret.media && ret.media.data && ret.media.contentType) {
+      try {
+        const b64 = Buffer.from(ret.media.data).toString('base64');
+        ret.mediaDataUrl = `data:${ret.media.contentType};base64,${b64}`;
+      } catch (_) {}
     }
-    delete doc.media?.data; // keep raw buffer out (optional)
-    return doc;
+    if (ret.media && ret.media.data) delete ret.media.data; // keep payload small
+    return ret;
   }
 });
 
