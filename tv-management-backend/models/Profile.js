@@ -4,9 +4,9 @@ const profileSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: String,
   type: { type: String, enum: ['text', 'image', 'video'], required: true },
-  content: String,
-  url: String,
-  layout: { type: String, enum: ['fullscreen', 'split2', 'split4'], required: true },
+  content: String,     // for text
+  url: String,         // external media URL
+  layout: { type: String, enum: ['fullscreen', 'split2', 'split4'], default: 'fullscreen' },
   tv: { type: mongoose.Schema.Types.ObjectId, ref: 'TV' },
   media: {
     data: Buffer,
@@ -17,13 +17,13 @@ const profileSchema = new mongoose.Schema({
 
 profileSchema.set('toJSON', {
   transform: (_doc, ret) => {
-    if (ret.media && ret.media.data && ret.media.contentType) {
+    if (ret.media?.data && ret.media?.contentType) {
       try {
         const b64 = Buffer.from(ret.media.data).toString('base64');
         ret.mediaDataUrl = `data:${ret.media.contentType};base64,${b64}`;
-      } catch (_) {}
+      } catch {}
     }
-    if (ret.media && ret.media.data) delete ret.media.data;
+    if (ret.media?.data) delete ret.media.data; // drop heavy buffer from JSON
     return ret;
   }
 });

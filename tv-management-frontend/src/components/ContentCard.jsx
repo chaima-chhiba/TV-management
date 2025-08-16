@@ -27,7 +27,7 @@ function getMediaSrc(item) {
   return '';
 }
 
-export default function ContentCard({ item, onDelete }) {
+export default function ContentCard({ item, onDelete, onPreview }) {
   return (
     <div
       style={{
@@ -37,49 +37,89 @@ export default function ContentCard({ item, onDelete }) {
         padding:16,
         display:'flex',
         flexDirection:'column',
-        gap:12
+        gap:12,
+        minHeight: 340,              // fixed card height
       }}
     >
       <div>
-        <div style={{fontWeight:600, fontSize:16, color:'#1e293b'}}>{item.title}</div>
+        <div style={{fontWeight:600, fontSize:16, color:'#1e293b', lineHeight:1.3}}>
+          {item.title}
+        </div>
         <div style={{fontSize:12, fontWeight:500, letterSpacing:.5, color:'#6366f1'}}>
           {item.type?.toUpperCase()} • {item.layout || '-'}
         </div>
       </div>
-      {item.type === 'image' && (
-        <img
-          src={getMediaSrc(item)}
-          alt={item.title}
-          style={{width:'100%', borderRadius:10}}
-          onError={(e)=>{ e.currentTarget.style.opacity='0.4'; }}
-        />
-      )}
-      {item.type === 'video' && (
-        <video
-          src={getMediaSrc(item)}
-          style={{width:'100%', borderRadius:10}}
-          controls
-        />
-      )}
-      {item.type === 'text' && item.content && (
-        <div style={{
-          background:'#f1f5f9',
-          padding:12,
+
+      {/* Fixed-size media container */}
+      <div
+        style={{
+          height: 160,
           borderRadius:10,
-          fontSize:14,
-          color:'#334155',
-          lineHeight:1.4,
-          maxHeight:140,
-          overflow:'auto'
-        }}>
-          {item.content}
-        </div>
-      )}
+          border:'1px solid #e2e8f0',
+          background:'#f8fafc',
+          overflow:'hidden',
+          display:'flex',
+          alignItems:'center',
+          justifyContent:'center',
+          cursor: onPreview ? 'pointer' : 'default'
+        }}
+        onClick={onPreview}
+        title="Click to preview"
+      >
+        {item.type === 'image' && (
+          <img
+            src={getMediaSrc(item)}
+            alt={item.title}
+            style={{width:'100%', height:'100%', objectFit:'cover'}}
+            onError={(e)=>{ e.currentTarget.style.opacity='0.4'; }}
+          />
+        )}
+        {item.type === 'video' && (
+          <video
+            src={getMediaSrc(item)}
+            style={{width:'100%', height:'100%', objectFit:'cover'}}
+            muted
+          />
+        )}
+        {item.type === 'text' && (
+          <div style={{padding:12, color:'#334155', fontSize:14, lineHeight:1.35, textAlign:'center'}}>
+            {item.content?.slice(0,160) || '—'}
+          </div>
+        )}
+        {item.type !== 'text' && !getMediaSrc(item) && (
+          <div style={{color:'#94a3b8', fontSize:12}}>No media</div>
+        )}
+      </div>
+
+      {/* Description snippet */}
       {item.description && (
-        <div style={{fontSize:12, color:'#64748b'}}>
-          {item.description.length > 80 ? item.description.slice(0,80)+'...' : item.description}
+        <div style={{
+          fontSize:12, color:'#64748b', lineHeight:1.35,
+          maxHeight:48, overflow:'hidden'
+        }}>
+          {item.description}
         </div>
       )}
+
+      {/* Optional actions row for card-level preview/delete */}
+      <div style={{display:'flex', gap:8, marginTop:'auto'}}>
+        {onPreview && (
+          <button
+            onClick={onPreview}
+            style={{ background:'#f1f5f9', color:'#334155', border:'none', borderRadius:8, padding:'8px 10px', fontSize:12, fontWeight:600, cursor:'pointer', flex:1 }}
+          >
+            Preview
+          </button>
+        )}
+        {onDelete && (
+          <button
+            onClick={onDelete}
+            style={{ background:'#fee2e2', color:'#b91c1c', border:'none', borderRadius:8, padding:'8px 10px', fontSize:12, fontWeight:600, cursor:'pointer' }}
+          >
+            Delete
+          </button>
+        )}
+      </div>
     </div>
   );
 }

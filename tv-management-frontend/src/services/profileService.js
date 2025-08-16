@@ -1,4 +1,5 @@
 import { getToken } from './authService';
+
 const API_URL = 'http://localhost:5000/api/profiles';
 
 const headers = () => ({
@@ -9,7 +10,7 @@ const headers = () => ({
 const profileService = {
   async getAll() {
     const r = await fetch(API_URL, { headers: headers() });
-    if (!r.ok) throw new Error('Failed to fetch profiles');
+    if (!r.ok) throw new Error(`profiles HTTP ${r.status}`);
     return r.json();
   },
   async create(data) {
@@ -18,7 +19,7 @@ const profileService = {
       headers: headers(),
       body: JSON.stringify(data)
     });
-    if (!r.ok) throw new Error('Failed to create profile');
+    if (!r.ok) throw new Error(`create profile HTTP ${r.status}`);
     return r.json();
   },
   async update(id, data) {
@@ -27,7 +28,7 @@ const profileService = {
       headers: headers(),
       body: JSON.stringify(data)
     });
-    if (!r.ok) throw new Error('Failed to update profile');
+    if (!r.ok) throw new Error(`update profile HTTP ${r.status}`);
     return r.json();
   },
   async remove(id) {
@@ -35,7 +36,7 @@ const profileService = {
       method: 'DELETE',
       headers: headers()
     });
-    if (!r.ok) throw new Error('Failed to delete profile');
+    if (!r.ok) throw new Error(`delete profile HTTP ${r.status}`);
     return r.json();
   }
 };

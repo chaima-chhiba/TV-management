@@ -19,6 +19,8 @@ const TVCard = ({ tv, onEdit, onDelete, isSelected, onSelect }) => {
     }
   };
 
+  const id = tv._id || tv.id;
+
   return (
     <div className={`bg-white rounded-lg shadow-md border-2 hover:shadow-lg transition-all ${
       isSelected ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
@@ -86,7 +88,7 @@ const TVCard = ({ tv, onEdit, onDelete, isSelected, onSelect }) => {
         <div className="flex justify-between text-sm">
           <span className="text-gray-600">Created:</span>
           <span className="text-gray-900">
-            {new Date(tv.createdAt).toLocaleDateString()}
+            {tv.createdAt ? new Date(tv.createdAt).toLocaleDateString() : '—'}
           </span>
         </div>
       </div>
@@ -101,17 +103,18 @@ const TVCard = ({ tv, onEdit, onDelete, isSelected, onSelect }) => {
             <Edit size={14} />
             <span>Edit</span>
           </button>
-          
+
+          {/* Single Delete button */}
           <button
-            onClick={() => onDelete(tv.id)}
+            onClick={() => onDelete(id)}
             className="flex-1 bg-red-100 hover:bg-red-200 text-red-700 px-3 py-2 rounded text-sm font-medium transition-colors flex items-center justify-center space-x-1"
           >
             <Trash2 size={14} />
             <span>Delete</span>
           </button>
-          
+
           <button
-            onClick={() => window.open(`/display/${tv._id || tv.id}`, '_blank')}
+            onClick={() => window.open(`/display/${id}`, '_blank')}
             className="flex-1 bg-green-100 hover:bg-green-200 text-green-700 px-3 py-2 rounded text-sm font-medium transition-colors flex items-center justify-center space-x-1"
           >
             <Monitor size={14} />
