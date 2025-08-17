@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import contentService from '../services/contentService';
 import profileService from '../services/profileService';
+import scheduleService from '../services/scheduleService';
 
 export default function Display() {
   const { tvId } = useParams();
@@ -13,11 +14,16 @@ export default function Display() {
 
   // single page index (0..3)
   const [pageIdx, setPageIdx] = useState(0);
+  const [schedules, setSchedules] = React.useState([]);
 
   // Load & pick last 4 (profiles override)
   const load = async () => {
     try {
       setLoading(true);
+      // fetch schedules for this TV (protected; ensure token exists)
+      const tvSchedules = await scheduleService.getByTv(tvId);
+      setSchedules(tvSchedules);
+
       const [allProfiles, allContent] = await Promise.all([
         profileService.getAll(),
         contentService.getAll()

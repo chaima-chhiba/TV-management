@@ -30,11 +30,26 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
     layout: initial?.layout || 'fullscreen',
     tv: initial?.tv?._id || initial?.tv || '',
     fileBase64: initial?.mediaDataUrl ? initial.mediaDataUrl.split(',')[1] : '',
-    fileMime: initial?.mediaDataUrl ? initial.mediaDataUrl.match(/^data:(.*?);/)[1] : ''
+    fileMime: initial?.mediaDataUrl ? initial.mediaDataUrl.match(/^data:(.*?);/)[1] : '',
+    // ADD: schedule defaults
+    scheduleEnabled: false,
+    daysOfWeek: [0,1,2,3,4,5,6],
+    startTime: '00:00',
+    endTime: '23:59',
+    startDate: '',
+    endDate: ''
   }));
 
   const handleChange = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const toggleDay = (d) => {
+    setForm(prev => {
+      const set = new Set(prev.daysOfWeek);
+      set.has(d) ? set.delete(d) : set.add(d);
+      return { ...prev, daysOfWeek: Array.from(set).sort((a,b)=>a-b) };
+    });
   };
 
   const handleFile = (file) => {
@@ -54,6 +69,10 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (form.scheduleEnabled && !form.tv) {
+      alert('Select a target TV to schedule this content.');
+      return;
+    }
     const payload = {
       title: form.title.trim(),
       description: form.description.trim(),
@@ -63,7 +82,16 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
       url: form.fileBase64 ? undefined : (form.type !== 'text' && form.url ? form.url.trim() : undefined),
       content: form.type === 'text' ? form.textContent.trim() : undefined,
       fileBase64: form.fileBase64 || undefined,
-      fileMime: form.fileBase64 ? form.fileMime : undefined
+      fileMime: form.fileBase64 ? form.fileMime : undefined,
+      // ADD: schedule payload
+      schedule: form.scheduleEnabled ? {
+        enabled: true,
+        daysOfWeek: form.daysOfWeek,
+        startTime: form.startTime,
+        endTime: form.endTime,
+        startDate: form.startDate || undefined,
+        endDate: form.endDate || undefined
+      } : { enabled: false }
     };
     onSubmit(payload);
   };
@@ -186,6 +214,64 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
             </small>
           )}
         </Field>
+      )}
+
+      {/* Schedule toggle */}
+      <Field label="Schedule (optional)">
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <input
+            type="checkbox"
+            checked={form.scheduleEnabled}
+            onChange={e => handleChange('scheduleEnabled', e.target.checked)}
+          />
+          <span style={{ color:'#475569' }}>Enable schedule for this content</span>
+        </div>
+      </Field>
+
+      {form.scheduleEnabled && (
+        <>
+          <Field label="Days of week">
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+              {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((lbl, idx) => {
+                const active = form.daysOfWeek.includes(idx);
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => toggleDay(idx)}
+                    style={{
+                      padding:'6px 10px',
+                      borderRadius:8,
+                      border:'1px solid ' + (active ? '#2563eb' : '#cbd5e1'),
+                      background: active ? '#2563eb' : '#fff',
+                      color: active ? '#fff' : '#334155',
+                      fontSize:12,
+                      fontWeight:600
+                    }}
+                  >
+                    {lbl}
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+
+          <Field label="Time window (local time)">
+            <div style={{ display:'flex', gap:10 }}>
+              <input type="time" value={form.startTime} onChange={e=>handleChange('startTime', e.target.value)} style={inputStyle} />
+              <span style={{ alignSelf:'center', color:'#64748b' }}>to</span>
+              <input type="time" value={form.endTime} onChange={e=>handleChange('endTime', e.target.value)} style={inputStyle} />
+            </div>
+          </Field>
+
+          <Field label="Date range (optional)">
+            <div style={{ display:'flex', gap:10 }}>
+              <input type="date" value={form.startDate} onChange={e=>handleChange('startDate', e.target.value)} style={inputStyle} />
+              <span style={{ alignSelf:'center', color:'#64748b' }}>to</span>
+              <input type="date" value={form.endDate} onChange={e=>handleChange('endDate', e.target.value)} style={inputStyle} />
+            </div>
+          </Field>
+        </>
       )}
 
       <div style={previewBoxStyle}>

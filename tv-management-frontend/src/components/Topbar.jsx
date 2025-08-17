@@ -10,7 +10,7 @@ const navLinks = [
   
   { to: '/content', label: 'Content', icon: Upload },
   { to: '/profile', label: 'Profile', icon: Files},
-  { to: '/scheduler', label: 'Scheduler', icon: Calendar }
+  { to: '/schedule', label: 'Scheduler', icon: Calendar }
 ];
 
 export default function TopNav() {

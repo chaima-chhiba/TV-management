@@ -91,17 +91,7 @@ export default function ContentCard({ item, onDelete, onPreview }) {
         )}
       </div>
 
-      {/* Description snippet */}
-      {item.description && (
-        <div style={{
-          fontSize:12, color:'#64748b', lineHeight:1.35,
-          maxHeight:48, overflow:'hidden'
-        }}>
-          {item.description}
-        </div>
-      )}
-
-      {/* Optional actions row for card-level preview/delete */}
+      {/* Actions (Preview only to avoid duplicate Delete) */}
       <div style={{display:'flex', gap:8, marginTop:'auto'}}>
         {onPreview && (
           <button
@@ -109,14 +99,6 @@ export default function ContentCard({ item, onDelete, onPreview }) {
             style={{ background:'#f1f5f9', color:'#334155', border:'none', borderRadius:8, padding:'8px 10px', fontSize:12, fontWeight:600, cursor:'pointer', flex:1 }}
           >
             Preview
-          </button>
-        )}
-        {onDelete && (
-          <button
-            onClick={onDelete}
-            style={{ background:'#fee2e2', color:'#b91c1c', border:'none', borderRadius:8, padding:'8px 10px', fontSize:12, fontWeight:600, cursor:'pointer' }}
-          >
-            Delete
           </button>
         )}
       </div>

@@ -7,6 +7,7 @@ import Login from '../pages/Login';
 import ProtectedRoute from '../components/ProtectedRoute';
 import Display from '../pages/Display';
 import Profiles from '../pages/Profiles';
+import Schedule from '../pages/Schedule'; // ADD
 
 export default function AppRouter() {
   return (
@@ -41,6 +42,15 @@ export default function AppRouter() {
         element={
           <ProtectedRoute>
             <Profiles />
+          </ProtectedRoute>
+        }
+      />
+      {/* NEW: Scheduling UI */}
+      <Route
+        path="/schedule"
+        element={
+          <ProtectedRoute>
+            <Schedule />
           </ProtectedRoute>
         }
       />

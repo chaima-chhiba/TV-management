@@ -6,8 +6,14 @@ exports.createSchedule = async (req, res) => {
   res.status(201).json(schedule);
 };
 
-exports.getAllSchedules = async (req, res) => {
+exports.getAllSchedules = async (_req, res) => {
   const schedules = await Schedule.find().populate('tvId').populate('contentId');
+  res.json(schedules);
+};
+
+exports.getSchedulesByTv = async (req, res) => {
+  const { tvId } = req.params;
+  const schedules = await Schedule.find({ tvId, enabled: true }).populate('contentId');
   res.json(schedules);
 };
 

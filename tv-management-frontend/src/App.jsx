@@ -6,7 +6,8 @@ import Dashboard from './pages/Dashboard';
 import TVs from './pages/TVs';
 import ContentLibrary from './pages/ContentLibrary';
 import Profiles from './pages/Profiles';
-import Display from './pages/Display'; // ADD
+import Display from './pages/Display'; 
+import Schedule from './pages/Schedule'; 
 
 function Layout() {
   return (
@@ -37,8 +38,11 @@ export default function App() {
           <Route path="/content" element={<ContentLibrary />} />
 
           {/* Profiles + alias */}
-          <Route path="/profiles" element={<Profiles />} />    {/* ADD */}
-          <Route path="/profile" element={<Navigate to="/profiles" replace />} /> {/* ADD */}
+          <Route path="/profiles" element={<Profiles />} />   
+          <Route path="/profile" element={<Navigate to="/profiles" replace />} />
+
+          {/* Scheduling */}
+          <Route path="/schedule" element={<Schedule />} />
         </Route>
 
         {/* Fallback */}
