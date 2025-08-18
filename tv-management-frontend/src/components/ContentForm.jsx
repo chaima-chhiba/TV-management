@@ -21,6 +21,9 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
     tvService.getTVs().then(setTvs).catch(console.error);
   }, []);
 
+  // NEW: support multiple media items for image/video
+  const [mediaList, setMediaList] = useState([]); // [{ name, preview, fileBase64, fileMime, url }]
+
   const [form, setForm] = useState(() => ({
     title: initial?.title || '',
     description: initial?.description || '',
@@ -52,38 +55,73 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
     });
   };
 
+  // NEW: handle multiple file selection
+  const handleFiles = (files) => {
+    if (!files || files.length === 0) return;
+    const arr = Array.from(files);
+    arr.forEach(file => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result; // data URL
+        const base64 = result.split(',')[1];
+        const mime = result.match(/^data:(.*?);/)[1];
+        setMediaList(prev => [
+          ...prev,
+          {
+            name: file.name,
+            preview: result,
+            fileBase64: base64,
+            fileMime: mime,
+            url: ''
+          }
+        ]);
+        // clear single-slot fields so multi mode is unambiguous
+        setForm(p => ({ ...p, fileBase64: '', fileMime: '', url: '' }));
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Keep single-file setter for backward compatibility, but prefer multi
   const handleFile = (file) => {
     if (!file) {
       setForm(p => ({ ...p, fileBase64: '', fileMime: '', url: '' }));
       return;
     }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result; // data URL
-      const base64 = result.split(',')[1];
-      const mime = result.match(/^data:(.*?);/)[1];
-      setForm(p => ({ ...p, fileBase64: base64, fileMime: mime, url: '' }));
-    };
-    reader.readAsDataURL(file);
+    // if user picks a single file via the main input, route to multi list too
+    handleFiles([file]);
   };
 
-  const handleSubmit = (e) => {
+  // NEW: add URL as another media item
+  const addUrlItem = () => {
+    const u = (form.url || '').trim();
+    if (!u) return;
+    setMediaList(prev => [
+      ...prev,
+      { name: u.split('/').pop() || 'URL', preview: u, fileBase64: '', fileMime: '', url: u }
+    ]);
+    setForm(p => ({ ...p, url: '', fileBase64: '', fileMime: '' }));
+  };
+
+  const removeMediaAt = (idx) => {
+    setMediaList(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  // UPDATED: submit can create many items (one per media)
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (form.scheduleEnabled && !form.tv) {
       alert('Select a target TV to schedule this content.');
       return;
     }
-    const payload = {
-      title: form.title.trim(),
+
+    const common = {
       description: form.description.trim(),
       type: form.type,
       layout: form.layout,
       tv: form.tv || null,
-      url: form.fileBase64 ? undefined : (form.type !== 'text' && form.url ? form.url.trim() : undefined),
       content: form.type === 'text' ? form.textContent.trim() : undefined,
-      fileBase64: form.fileBase64 || undefined,
-      fileMime: form.fileBase64 ? form.fileMime : undefined,
-      // ADD: schedule payload
+      // schedule payload (reused for all items)
       schedule: form.scheduleEnabled ? {
         enabled: true,
         daysOfWeek: form.daysOfWeek,
@@ -93,7 +131,42 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
         endDate: form.endDate || undefined
       } : { enabled: false }
     };
-    onSubmit(payload);
+
+    // Single text OR no multi-media selected -> fallback to single payload
+    if (form.type === 'text' || mediaList.length === 0) {
+      const payload = {
+        ...common,
+        title: form.title.trim(),
+        url: form.type !== 'text' && !form.fileBase64 ? (form.url ? form.url.trim() : undefined) : undefined,
+        fileBase64: form.fileBase64 || undefined,
+        fileMime: form.fileBase64 ? form.fileMime : undefined
+      };
+      await onSubmit(payload);
+      return;
+    }
+
+    // Multi-create: one payload per media item
+    const baseTitle = form.title.trim();
+    for (let i = 0; i < mediaList.length; i++) {
+      const m = mediaList[i];
+      const title =
+        baseTitle
+          ? (mediaList.length > 1 ? `${baseTitle} ${i + 1}` : baseTitle)
+          : (m.name || `${form.type} ${i + 1}`);
+
+      const payload = {
+        ...common,
+        title,
+        url: m.url || undefined,
+        fileBase64: m.fileBase64 || undefined,
+        fileMime: m.fileMime || undefined
+      };
+      // onSubmit may return a promise; await to avoid overloading backend
+      // eslint-disable-next-line no-await-in-loop
+      await onSubmit(payload);
+    }
+    // Optional: close modal after bulk
+    // onCancel?.();
   };
 
   return (
@@ -191,26 +264,55 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
       )}
 
       {form.type !== 'text' && (
-        <Field label={form.type === 'image' ? 'Image File or URL' : 'Video File or URL'}>
+        <Field label={form.type === 'image' ? 'Images (multiple) or URLs' : 'Videos (multiple) or URLs'}>
+          {/* NEW: multiple file input */}
           <input
             type="file"
             accept={form.type === 'image' ? 'image/*' : 'video/*'}
-            onChange={e => handleFile(e.target.files?.[0])}
+            multiple
+            onChange={e => handleFiles(e.target.files)}
             style={{ marginBottom: 8 }}
           />
-          <input
-            value={form.url}
-            onChange={e =>
-              setForm(p => ({ ...p, url: e.target.value, fileBase64: '', fileMime: '' }))
-            }
-            style={inputStyle}
-            placeholder="Or external URL (optional)"
-          />
-          {(form.fileBase64 || form.url) && (
+          {/* URL adder */}
+          <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
+            <input
+              value={form.url}
+              onChange={e => setForm(p => ({ ...p, url: e.target.value }))}
+              style={{ ...inputStyle, flex: 1 }}
+              placeholder="Add external URL and click +"
+            />
+            <button type="button" onClick={addUrlItem} style={{ ...buttonStyle('#f1f5f9', '#334155'), minWidth: 44, padding: '10px 12px' }}>+</button>
+          </div>
+
+          {/* NEW: show selected items list */}
+          {mediaList.length > 0 && (
+            <div style={{ display:'grid', gap:8, gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))' }}>
+              {mediaList.map((m, idx) => (
+                <div key={idx} style={{ border:'1px solid #e2e8f0', borderRadius:10, padding:8, background:'#fff' }}>
+                  <div style={{ fontSize:12, fontWeight:700, color:'#334155', marginBottom:6, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {m.name}
+                  </div>
+                  <div style={{ height:120, borderRadius:8, overflow:'hidden', background:'#f8fafc', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:6 }}>
+                    {form.type === 'image' && (
+                      <img src={m.preview || m.url} alt={m.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                    )}
+                    {form.type === 'video' && (
+                      <video src={m.preview || m.url} style={{ width:'100%', height:'100%', objectFit:'cover' }} muted />
+                    )}
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <small style={{ color:'#64748b' }}>{m.fileMime || 'URL'}</small>
+                    <button type="button" onClick={() => removeMediaAt(idx)} style={iconBtnStyle('#fee2e2', '#b91c1c')}>✕</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Legacy single preview (if user didn’t add to mediaList) */}
+          {mediaList.length === 0 && (form.fileBase64 || form.url) && (
             <small style={{ color: '#64748b' }}>
-              {form.fileBase64
-                ? 'Using embedded file.'
-                : 'Using external URL.'}
+              {form.fileBase64 ? 'Using embedded file.' : 'Using external URL.'}
             </small>
           )}
         </Field>

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
 import { useParams } from 'react-router-dom';
 import contentService from '../services/contentService';
 import profileService from '../services/profileService';
@@ -6,171 +6,244 @@ import scheduleService from '../services/scheduleService';
 
 export default function Display() {
   const { tvId } = useParams();
-  const [rawItems, setRawItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
-  const pollRef = useRef();
-  const timerRef = useRef();
 
-  // single page index (0..3)
-  const [pageIdx, setPageIdx] = useState(0);
-  const [schedules, setSchedules] = React.useState([]);
+  const [pages, setPages] = React.useState([]); // [{ layout, slots, duration }]
+  const [pageIdx, setPageIdx] = React.useState(0);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState('');
+  const containerRef = React.useRef(null);
 
-  // Load & pick last 4 (profiles override)
-  const load = async () => {
-    try {
-      setLoading(true);
-      // fetch schedules for this TV (protected; ensure token exists)
-      const tvSchedules = await scheduleService.getByTv(tvId);
-      setSchedules(tvSchedules);
+  // HUD state (time + weather)
+  const [now, setNow] = React.useState(new Date());
+  const [weather, setWeather] = React.useState(null);
 
-      const [allProfiles, allContent] = await Promise.all([
-        profileService.getAll(),
-        contentService.getAll()
-      ]);
+  // swipe state
+  const startX = React.useRef(null);
+  const isPointerDown = React.useRef(false);
 
-      const tvProfiles = allProfiles.filter(p => {
-        const tvField = p.tv && (p.tv._id || p.tv);
-        return tvField && tvField.toString() === tvId;
-      });
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoading(true);
+        setError('');
 
-      let chosen = tvProfiles.length
-        ? tvProfiles
-        : allContent.filter(c => {
-            if (!c.tv) return true;
-            const tvField = c.tv._id || c.tv;
-            return tvField.toString() === tvId;
-          });
+        // Fetch all sources needed
+        const [allProfiles, allContent, tvSchedules] = await Promise.all([
+          profileService.getAll().catch(() => []),
+          contentService.getAll().catch(() => []),
+          scheduleService.getByTv(tvId).catch(() => [])
+        ]);
 
-      // normalize duration/layout then take last 4 by createdAt (timestamps ensure chronological)
-      chosen = chosen
-        .map(it => ({
-          ...it,
-            duration: it.duration || 8,
-            layout: it.layout || 'fullscreen'
-          }))
-        .sort((a, b) => {
-          const da = new Date(a.createdAt || 0).getTime();
-          const db = new Date(b.createdAt || 0).getTime();
-          return da - db; // oldest first
+        if (!mounted) return;
+
+        // 1) Prefer profiles for this TV, otherwise content (global or specific TV)
+        const tvProfiles = allProfiles.filter(p => {
+          const pid = p.tv && (p.tv._id || p.tv);
+          return pid && String(pid) === String(tvId);
+        });
+        const globalProfiles = allProfiles.filter(p => !p.tv);
+        const sourceProfiles = tvProfiles.length ? tvProfiles : globalProfiles;
+
+        const sourceContent = allContent.filter(c => {
+          if (!c.tv) return true; // global
+          const cid = c.tv._id || c.tv;
+          return String(cid) === String(tvId);
         });
 
-      const lastFour = chosen.slice(-4);
-      setRawItems(lastFour);
-      setErr('');
-      setPageIdx(0); // reset rotation after reload
-    } catch (e) {
-      setErr(e.message);
-    } finally {
-      setLoading(false);
+        const baseItems = (sourceProfiles.length ? sourceProfiles : sourceContent)
+          .map(n => ({
+            ...n,
+            duration: Number(n.duration) > 0 ? Number(n.duration) : 8
+          }));
+
+        // 2) Filter by schedule if any exist for this TV
+        const allowed = baseItems.filter(c => isAllowedNow(c, tvSchedules));
+
+        // 3) Build dynamic pages of up to 4 items
+        const built = buildDynamicPages(allowed);
+        setPages(built);
+        setPageIdx(0);
+      } catch (e) {
+        console.error('Display load failed:', e);
+        setError(e.message || 'Failed to load');
+        setPages([]);
+      } finally {
+        setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [tvId]);
+
+  // Auto-advance timer based on current page duration
+  React.useEffect(() => {
+    if (!pages.length) return;
+    const durMs = (pages[pageIdx]?.duration || 10) * 1000;
+    const t = setTimeout(() => setPageIdx(i => (i + 1) % pages.length), durMs);
+    return () => clearTimeout(t);
+  }, [pages, pageIdx]);
+
+  // Keyboard arrows
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (!pages.length) return;
+      if (e.key === 'ArrowRight') setPageIdx(i => (i + 1) % pages.length);
+      if (e.key === 'ArrowLeft') setPageIdx(i => (i - 1 + pages.length) % pages.length);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pages.length]);
+
+ 
+  const onPointerDown = (e) => {
+    isPointerDown.current = true;
+    startX.current = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+  };
+  const onPointerMove = (e) => {
+    if (!isPointerDown.current) return;
+
+  };
+  const onPointerUp = (e) => {
+    if (!isPointerDown.current) return;
+    isPointerDown.current = false;
+    const endX = e.clientX ?? e.changedTouches?.[0]?.clientX ?? 0;
+    const dx = endX - (startX.current ?? 0);
+    const threshold = 50; // px
+    if (Math.abs(dx) >= threshold && pages.length) {
+      if (dx < 0) setPageIdx(i => (i + 1) % pages.length); // swipe left -> next
+      else setPageIdx(i => (i - 1 + pages.length) % pages.length); // swipe right -> prev
     }
   };
 
-  useEffect(() => {
-    load();
-    pollRef.current = setInterval(load, 30000);
-    return () => clearInterval(pollRef.current);
-  }, [tvId]);
+  // clock
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
-  // Determine mode (fullscreen wins, else split2, else split4)
-  const full = rawItems.filter(i => i.layout === 'fullscreen');
-  const split2 = rawItems.filter(i => i.layout === 'split2');
-  const split4 = rawItems.filter(i => i.layout === 'split4');
-
-  let mode = 'none';
-  if (full.length) mode = 'fullscreen';
-  else if (split2.length) mode = 'split2';
-  else if (split4.length) mode = 'split4';
-
-  // Build 4 pages based on mode (reuse items to ensure 4 pages)
-  const pages = buildPages(mode, full, split2, split4);
-
-  // Schedule page rotation (duration = max item duration on page)
-  useEffect(() => {
-    if (!pages.length) return;
-    if (timerRef.current) clearTimeout(timerRef.current);
-    const currentPage = pages[pageIdx];
-    const pageDuration =
-      (currentPage.items.length
-        ? Math.max(...currentPage.items.map(i => i.duration || 8))
-        : 8) * 1000;
-    timerRef.current = setTimeout(
-      () => setPageIdx(prev => (prev + 1) % 4),
-      pageDuration
-    );
-    return () => clearTimeout(timerRef.current);
-  }, [pages, pageIdx]);
+  // weather (OpenWeather)
+  React.useEffect(() => {
+    const key = import.meta.env?.VITE_WEATHER_API_KEY;
+    const city = import.meta.env?.VITE_WEATHER_CITY;
+    if (!key || !city) return;
+    let alive = true;
+    const fetchWx = async () => {
+      try {
+        const r = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&units=metric&appid=${key}`);
+        if (!r.ok) return;
+        const d = await r.json();
+        if (!alive) return;
+        setWeather({
+          temp: d?.main?.temp,
+          pressure: d?.main?.pressure,
+          humidity: d?.main?.humidity
+        });
+      } catch {}
+    };
+    fetchWx();
+    const t = setInterval(fetchWx, 10 * 60 * 1000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
 
   if (loading) return <Status text="Loading..." />;
-  if (err) return <Status text={err} />;
-  if (!pages.length) return <DefaultScreen />;
+  if (error) return <Status text={error} />;
+  if (!pages.length) return <Status text="No items to display" />;
 
-  const page = pages[pageIdx];
+  const current = pages[pageIdx];
+  const hudOff = new URLSearchParams(window.location.search).get('hud') === '0';
 
-  if (mode === 'fullscreen') {
-    return (
-      <Wrapper>
-        <Fade key={pageIdx}>
-          <Render item={page.items[0]} />
-        </Fade>
-      </Wrapper>
-    );
-  }
-
-  if (mode === 'split2') {
-    const [a, b] = page.items;
-    return (
-      <Wrapper split2>
-        <div style={split2Left}><Render item={a} /></div>
-        <div style={split2Right}><Render item={b} /></div>
-      </Wrapper>
-    );
-  }
-
-  if (mode === 'split4') {
-    return (
-      <Wrapper split4>
-        {page.items.map((it, i) => (
-          <div key={i} style={quadCell}>
-            <Render item={it} />
+  return (
+    <div
+      ref={containerRef}
+      style={{ width:'100vw', height:'100vh', background:'#000', touchAction:'pan-y', position:'relative' }}
+      onMouseDown={onPointerDown}
+      onMouseMove={onPointerMove}
+      onMouseUp={onPointerUp}
+      onTouchStart={onPointerDown}
+      onTouchMove={onPointerMove}
+      onTouchEnd={onPointerUp}
+    >
+      {/* HUD */}
+      {!hudOff && (
+        <div style={{
+          position:'fixed', top:12, right:12, zIndex:20, color:'#fff',
+          textShadow:'0 1px 2px rgba(0,0,0,.7)', display:'flex', flexDirection:'column', alignItems:'flex-end',
+          fontFamily:'system-ui, Segoe UI, Roboto, sans-serif'
+        }}>
+          <div style={{ fontSize:'4vmin', fontWeight:800 }}>
+            {now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}
           </div>
+          <div style={{ fontSize:'1.8vmin', opacity:.85 }}>
+            {now.toLocaleDateString()}
+          </div>
+          {weather && (
+            <div style={{ marginTop:6, fontSize:'1.8vmin', opacity:.9 }}>
+              {Math.round(weather.temp)}°C • {weather.pressure} hPa{weather.humidity != null ? ` • ${weather.humidity}%` : ''}
+            </div>
+          )}
+        </div>
+      )}
+
+      <Wrapper layout={current.layout}>
+        {current.slots.map((item, idx) => (
+          <Render key={(item?._id || item?.id || idx) + '_' + idx} item={item} />
         ))}
       </Wrapper>
-    );
-  }
-
-  return <Status text="No layout content" />;
+    </div>
+  );
 }
 
-function buildPages(mode, full, split2, split4) {
+function isAllowedNow(content, schedules) {
+  const id = String(content._id || content.id || '');
+  const matches = schedules.filter(s => String(s.contentId?._id || s.contentId) === id);
+  if (matches.length === 0) return true; 
+
+  const now = new Date();
+  const day = now.getDay(); 
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const cur = `${hh}:${mm}`;
+
+  return matches.some(s => {
+    if (s.enabled === false) return false;
+    if (Array.isArray(s.daysOfWeek) && !s.daysOfWeek.includes(day)) return false;
+
+    const startDate = s.startDate ? new Date(s.startDate) : null;
+    const endDate = s.endDate ? new Date(s.endDate) : null;
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (startDate && today < new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())) return false;
+    if (endDate && today > new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate())) return false;
+
+    const start = s.startTime || '00:00';
+    const end = s.endTime || '23:59';
+    if (start <= end) return cur >= start && cur <= end;
+    return cur >= start || cur <= end; // overnight window
+  });
+}
+
+// Build pages dynamically: up to 4 items per page
+function buildDynamicPages(items) {
+  const SLOTS = 4;
+  const sorted = [...items].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
   const pages = [];
-  if (mode === 'fullscreen') {
-    // up to 4 items; repeat to 4 pages
-    for (let i = 0; i < 4; i++) {
-      pages.push({ items: [full[i % full.length]] });
-    }
-  } else if (mode === 'split2') {
-    // pair selection with wrap; ensure at least 1 item
-    const list = split2.length ? split2 : [];
-    if (!list.length) return [];
-    for (let i = 0; i < 4; i++) {
-      const firstIdx = (i * 2) % list.length;
-      const secondIdx = (firstIdx + 1) % list.length;
-      pages.push({ items: [list[firstIdx], list[secondIdx]] });
-    }
-  } else if (mode === 'split4') {
-    const list = split4.length ? split4 : [];
-    if (!list.length) return [];
-    for (let i = 0; i < 4; i++) {
-      const start = (i * 4) % list.length;
-      const items = [];
-      for (let k = 0; k < 4; k++) {
-        items.push(list[(start + k) % list.length]);
-      }
-      pages.push({ items });
-    }
+  for (let i = 0; i < sorted.length; i += SLOTS) {
+    const chunk = sorted.slice(i, i + SLOTS);
+    const layout = decideLayout(chunk.length);
+    const duration = Math.max(...chunk.map(s => Number(s?.duration) || 0), 10);
+    // If fewer than 4, pad with nulls so grid keeps shape
+    const padded = [...chunk];
+    while (padded.length < SLOTS) padded.push(null);
+    pages.push({ layout, slots: padded, duration });
   }
+  // If no items at all, return empty
   return pages;
+}
+
+// 1 -> fullscreen, 2 -> split2, 3-4 -> split4
+function decideLayout(count) {
+  if (count <= 1) return 'fullscreen';
+  if (count === 2) return 'split2';
+  return 'split4';
 }
 
 function getMediaSrc(item) {
@@ -198,151 +271,68 @@ function getMediaSrc(item) {
 }
 
 function Render({ item }) {
-  if (!item) return null;
+  if (!item) return <div style={{ borderRadius:12, background:'#0b1220' }} />;
   if (item.type === 'text') {
     return (
-      <div style={textBox}>
-        <div style={textTitle}>{item.title}</div>
-        <div style={textBody}>{item.content}</div>
+      <div style={{
+        width:'100%', height:'100%', padding:16, boxSizing:'border-box',
+        background:'#0f172a', color:'#e2e8f0', borderRadius:12, overflow:'hidden'
+      }}>
+        <div style={{fontSize:'2.6vmin', fontWeight:700, marginBottom:8}}>{item.title}</div>
+        <div style={{fontSize:'2.2vmin', lineHeight:1.4, whiteSpace:'pre-wrap'}}>{item.content}</div>
       </div>
     );
   }
   if (item.type === 'image') {
-    return <img src={getMediaSrc(item)} alt={item.title} style={imgStyle} />;
+    return <img src={getMediaSrc(item)} alt={item.title} style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:12 }} />;
   }
   if (item.type === 'video') {
-    return <video src={getMediaSrc(item)} style={vidStyle} autoPlay muted loop playsInline />;
+    return <video src={getMediaSrc(item)} style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:12 }} autoPlay muted loop playsInline />;
   }
-  return null;
+  return <div />;
+}
+
+function Wrapper({ layout, children }) {
+  if (layout === 'split4') {
+    return (
+      <div style={{
+        display:'grid',
+        gridTemplateColumns:'1fr 1fr',
+        gridTemplateRows:'1fr 1fr',
+        gap:12, padding:12, width:'100vw', height:'100vh', boxSizing:'border-box'
+      }}>
+        {children}
+      </div>
+    );
+  }
+  if (layout === 'split2') {
+    return (
+      <div style={{
+        display:'grid',
+        gridTemplateColumns:'1fr 1fr',
+        gap:12, padding:12, width:'100vw', height:'100vh', boxSizing:'border-box'
+      }}>
+        {children.slice(0, 2)}
+      </div>
+    );
+  }
+  // fullscreen (first child)
+  return (
+    <div style={{ width:'100vw', height:'100vh', padding:12, boxSizing:'border-box' }}>
+      <div style={{ width:'100%', height:'100%' }}>
+        {children[0] || null}
+      </div>
+    </div>
+  );
 }
 
 function Status({ text }) {
   return (
     <div style={{
-      width:'100vw', height:'100vh', background:'#000',
-      color:'#94a3b8', display:'flex', alignItems:'center',
-      justifyContent:'center', fontSize:'3vmin', fontFamily:'system-ui'
-    }}>{text}</div>
-  );
-}
-
-function Wrapper({ children, split2, split4 }) {
-  return (
-    <div style={{
-      width:'100vw', height:'100vh', background:'#000', overflow:'hidden',
-      display:'flex',
-      flexDirection: split4 ? 'row' : (split2 ? 'row' : 'column'),
-      flexWrap: split4 ? 'wrap' : 'nowrap'
+      display:'flex', alignItems:'center', justifyContent:'center',
+      width:'100vw', height:'100vh', background:'#000', color:'#fff'
     }}>
-      {children}
-    </div>
-  );
-}
-
-const Fade = ({ children }) => (
-  <div style={{
-    width:'100%',height:'100%',display:'flex',alignItems:'center',
-    justifyContent:'center',animation:'fade .6s ease'
-  }}>
-    <style>{`@keyframes fade{from{opacity:0}to{opacity:1}}`}</style>
-    {children}
-  </div>
-);
-
-/* Styles */
-const textBox = {
-  color:'#fff', padding:'4vmin 6vmin', maxWidth:'90vw',
-  maxHeight:'90vh', overflow:'hidden', display:'flex',
-  flexDirection:'column', justifyContent:'center',
-  fontFamily:'system-ui'
-};
-const textTitle = { fontSize:'4vmin', fontWeight:700, marginBottom:'2vmin' };
-const textBody = { fontSize:'2.6vmin', lineHeight:1.4, whiteSpace:'pre-wrap' };
-const imgStyle = { maxWidth:'100%', maxHeight:'100%', objectFit:'contain' };
-const vidStyle = { width:'100%', height:'100%', objectFit:'cover' };
-const split2Left = { flex:1, borderRight:'2px solid #000', display:'flex', alignItems:'center', justifyContent:'center' };
-const split2Right = { flex:1, display:'flex', alignItems:'center', justifyContent:'center' };
-const quadCell = { width:'50%', height:'50%', border:'1px solid #000', boxSizing:'border-box', display:'flex', alignItems:'center', justifyContent:'center' };
-
-function DefaultScreen() {
-  const [now, setNow] = useState(new Date());
-  const [wx, setWx] = useState({ temp: null, pressure: null, place: '' });
-  const texts = [
-    'Welcome to the TV board',
-    'Have a great day!',
-    'System is running smoothly',
-    'Remember to take breaks'
-  ];
-  const [txtIdx, setTxtIdx] = useState(0);
-
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    const rt = setInterval(() => setTxtIdx(i => (i + 1) % texts.length), 10000);
-    return () => { clearInterval(t); clearInterval(rt); };
-  }, []);
-
-  useEffect(() => {
-    const fetchWx = (lat, lon) => {
-      fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,pressure_msl`)
-        .then(r => r.json())
-        .then(d => {
-          const cur = d.current || {};
-          setWx({
-            temp: typeof cur.temperature_2m === 'number' ? cur.temperature_2m : null,
-            pressure: typeof cur.pressure_msl === 'number' ? cur.pressure_msl : null,
-            place: ''
-          });
-        })
-        .catch(() => {});
-    };
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        pos => fetchWx(pos.coords.latitude, pos.coords.longitude),
-        () => fetchWx(40.7128, -74.0060) // fallback NYC
-      );
-    } else {
-      fetchWx(40.7128, -74.0060);
-    }
-  }, []);
-
-  return (
-    <div style={{
-      width:'100vw', height:'100vh', background:'linear-gradient(180deg,#0f172a,#0b1220)',
-      color:'#e2e8f0', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
-      fontFamily:'system-ui, sans-serif', textAlign:'center', padding:'4vmin'
-    }}>
-      <div style={{fontSize:'10vmin', fontWeight:800, letterSpacing:2}}>
-        {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-      </div>
-      <div style={{opacity:.8, marginTop:'1vmin', fontSize:'3vmin'}}>
-        {now.toLocaleDateString()}
-      </div>
-      <div style={{display:'flex', gap:'4vmin', marginTop:'6vmin', flexWrap:'wrap', justifyContent:'center'}}>
-        <Metric label="Temperature" value={
-          wx.temp !== null ? `${wx.temp.toFixed(1)}°C` : 'N/A'
-        } />
-        <Metric label="Pressure" value={
-          wx.pressure !== null ? `${Math.round(wx.pressure)} hPa` : 'N/A'
-        } />
-      </div>
-      <div style={{
-        marginTop:'6vmin', fontSize:'3vmin', color:'#cbd5e1',
-        background:'rgba(255,255,255,0.06)', padding:'2vmin 3vmin', borderRadius:16, maxWidth:'80vw'
-      }}>
-        {texts[txtIdx]}
-      </div>
-    </div>
-  );
-}
-
-function Metric({ label, value }) {
-  return (
-    <div style={{
-      minWidth:'26vmin', background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)',
-      padding:'2vmin 3vmin', borderRadius:16
-    }}>
-      <div style={{fontSize:'2.2vmin', opacity:.8}}>{label}</div>
-      <div style={{fontSize:'4vmin', fontWeight:700}}>{value}</div>
+      {text}
     </div>
   );
 }
