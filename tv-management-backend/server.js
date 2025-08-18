@@ -9,6 +9,10 @@ const scheduleRoutes = require('./routes/schedule');
 const profileRoutes = require('./routes/profileRoutes');
 const { authenticateJWT } = require('./middleware/authMiddleware');
 
+// ADD: controllers for public display endpoints
+const contentController = require('./controllers/contentController');
+const scheduleController = require('./controllers/scheduleController');
+
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -20,6 +24,12 @@ app.use(express.json({ limit: BODY_LIMIT }));
 app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }));
 
 app.use('/api/auth', authRoutes);
+
+// ADD: Public, read-only endpoints for TV screens (before protected routes)
+app.get('/api/public/content', contentController.getContentsPublic);
+app.get('/api/public/schedule/tv/:tvId', scheduleController.getSchedulesByTv);
+
+// Protected routes
 app.use('/api/content', authenticateJWT, contentRoutes);
 app.use('/api/tv', authenticateJWT, tvRoutes);
 app.use('/api/schedule', authenticateJWT, scheduleRoutes);

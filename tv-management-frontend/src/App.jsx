@@ -5,7 +5,6 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import TVs from './pages/TVs';
 import ContentLibrary from './pages/ContentLibrary';
-import Profiles from './pages/Profiles';
 import Display from './pages/Display'; 
 import Schedule from './pages/Schedule'; 
 
@@ -36,12 +35,6 @@ export default function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/tvs" element={<TVs />} />
           <Route path="/content" element={<ContentLibrary />} />
-
-          {/* Profiles + alias */}
-          <Route path="/profiles" element={<Profiles />} />   
-          <Route path="/profile" element={<Navigate to="/profiles" replace />} />
-
-          {/* Scheduling */}
           <Route path="/schedule" element={<Schedule />} />
         </Route>
 

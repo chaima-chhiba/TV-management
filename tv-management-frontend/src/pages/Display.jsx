@@ -1,8 +1,7 @@
 import React from 'react';
 import { useParams } from 'react-router-dom';
-import contentService from '../services/contentService';
-import profileService from '../services/profileService';
-import scheduleService from '../services/scheduleService';
+import contentPublicService from '../services/contentPublicService';
+import schedulePublicService from '../services/schedulePublicService';
 
 export default function Display() {
   const { tvId } = useParams();
@@ -28,22 +27,12 @@ export default function Display() {
         setLoading(true);
         setError('');
 
-        // Fetch all sources needed
-        const [allProfiles, allContent, tvSchedules] = await Promise.all([
-          profileService.getAll().catch(() => []),
-          contentService.getAll().catch(() => []),
-          scheduleService.getByTv(tvId).catch(() => [])
+        const [allContent, tvSchedules] = await Promise.all([
+          contentPublicService.getAll().catch(() => []),
+          schedulePublicService.getByTv(tvId).catch(() => [])
         ]);
 
         if (!mounted) return;
-
-        // 1) Prefer profiles for this TV, otherwise content (global or specific TV)
-        const tvProfiles = allProfiles.filter(p => {
-          const pid = p.tv && (p.tv._id || p.tv);
-          return pid && String(pid) === String(tvId);
-        });
-        const globalProfiles = allProfiles.filter(p => !p.tv);
-        const sourceProfiles = tvProfiles.length ? tvProfiles : globalProfiles;
 
         const sourceContent = allContent.filter(c => {
           if (!c.tv) return true; // global
@@ -51,16 +40,12 @@ export default function Display() {
           return String(cid) === String(tvId);
         });
 
-        const baseItems = (sourceProfiles.length ? sourceProfiles : sourceContent)
-          .map(n => ({
-            ...n,
-            duration: Number(n.duration) > 0 ? Number(n.duration) : 8
-          }));
+        const baseItems = sourceContent.map(n => ({
+          ...n,
+          duration: Number(n.duration) > 0 ? Number(n.duration) : 8
+        }));
 
-        // 2) Filter by schedule if any exist for this TV
         const allowed = baseItems.filter(c => isAllowedNow(c, tvSchedules));
-
-        // 3) Build dynamic pages of up to 4 items
         const built = buildDynamicPages(allowed);
         setPages(built);
         setPageIdx(0);
@@ -155,6 +140,19 @@ export default function Display() {
     return () => { alive = false; clearInterval(t); };
   }, []);
 
+  // Lock page scrolling while Display is mounted
+  React.useEffect(() => {
+    const prevHtml = document.documentElement.style.overflow;
+    const prevBody = document.body.style.overflow;
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    document.body.style.margin = '0';
+    return () => {
+      document.documentElement.style.overflow = prevHtml || '';
+      document.body.style.overflow = prevBody || '';
+    };
+  }, []);
+
   if (loading) return <Status text="Loading..." />;
   if (error) return <Status text={error} />;
   if (!pages.length) return <Status text="No items to display" />;
@@ -165,7 +163,12 @@ export default function Display() {
   return (
     <div
       ref={containerRef}
-      style={{ width:'100vw', height:'100vh', background:'#000', touchAction:'pan-y', position:'relative' }}
+      style={{
+        position:'fixed', inset:0,            // full screen without 100vw/100vh quirks
+        background:'#000',
+        touchAction:'none',                    // prevent page scroll on touch
+        overflow:'hidden'                      // hide any sub-pixel overflow
+      }}
       onMouseDown={onPointerDown}
       onMouseMove={onPointerMove}
       onMouseUp={onPointerUp}
@@ -226,7 +229,8 @@ export default function Display() {
 
       <Wrapper layout={current.layout}>
         {current.slots.map((item, idx) => (
-          <Render key={(item?._id || item?.id || idx) + '_' + idx} item={item} />
+          // pass layout for responsive text sizing
+          <Render key={(item?._id || item?.id || idx) + '_' + idx} item={item} layout={current.layout} />
         ))}
       </Wrapper>
     </div>
@@ -310,55 +314,90 @@ function getMediaSrc(item) {
   return '';
 }
 
-function Render({ item }) {
-  if (!item) return <div style={{ borderRadius:12, background:'#0b1220' }} />;
+// Add a tiny hook to detect orientation
+function useIsPortrait() {
+  const [isPortrait, setIsPortrait] = React.useState(() => window.innerHeight >= window.innerWidth);
+  React.useEffect(() => {
+    const onResize = () => setIsPortrait(window.innerHeight >= window.innerWidth);
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, []);
+  return isPortrait;
+}
+
+function Render({ item, layout }) {
+  if (!item) return <div style={{ background:'#000' }} />;
+
+  // scale text sizes depending on layout
+  const scale = layout === 'split4' ? 0.7 : layout === 'split2' ? 0.85 : 1;
+  const titleFs = `${2.6 * scale}vmin`;
+  const bodyFs = `${2.2 * scale}vmin`;
+
   if (item.type === 'text') {
     return (
       <div style={{
         width:'100%', height:'100%', padding:16, boxSizing:'border-box',
-        background:'#0f172a', color:'#e2e8f0', borderRadius:12, overflow:'hidden'
+        background:'#0f172a', color:'#e2e8f0', borderRadius:0, overflow:'hidden'
       }}>
-        <div style={{fontSize:'2.6vmin', fontWeight:700, marginBottom:8}}>{item.title}</div>
-        <div style={{fontSize:'2.2vmin', lineHeight:1.4, whiteSpace:'pre-wrap'}}>{item.content}</div>
+        <div style={{fontSize: titleFs, fontWeight:700, marginBottom:8}}>{item.title}</div>
+        <div style={{fontSize: bodyFs, lineHeight:1.4, whiteSpace:'pre-wrap'}}>{item.content}</div>
       </div>
     );
   }
   if (item.type === 'image') {
-    return <img src={getMediaSrc(item)} alt={item.title} style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:12 }} />;
+    return (
+      <img
+        src={getMediaSrc(item)}
+        alt={item.title}
+        style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:0, display:'block' }}
+      />
+    );
   }
   if (item.type === 'video') {
-    return <video src={getMediaSrc(item)} style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:12 }} autoPlay muted loop playsInline />;
+    return (
+      <video
+        src={getMediaSrc(item)}
+        style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:0, display:'block' }}
+        autoPlay muted loop playsInline webkit-playsinline="true"
+      />
+    );
   }
   return <div />;
 }
 
 function Wrapper({ layout, children }) {
+  const isPortrait = useIsPortrait();
+
+  // Fill parent exactly, no gaps/padding
+  const base = {
+    display:'grid',
+    width:'100%',
+    height:'100%',
+    boxSizing:'border-box',
+    gap: 0
+  };
+
   if (layout === 'split4') {
     return (
-      <div style={{
-        display:'grid',
-        gridTemplateColumns:'1fr 1fr',
-        gridTemplateRows:'1fr 1fr',
-        gap:12, padding:12, width:'100vw', height:'100vh', boxSizing:'border-box'
-      }}>
+      <div style={{ ...base, gridTemplateColumns:'1fr 1fr', gridTemplateRows:'1fr 1fr' }}>
         {children}
       </div>
     );
   }
+
   if (layout === 'split2') {
-    return (
-      <div style={{
-        display:'grid',
-        gridTemplateColumns:'1fr 1fr',
-        gap:12, padding:12, width:'100vw', height:'100vh', boxSizing:'border-box'
-      }}>
-        {children.slice(0, 2)}
-      </div>
-    );
+    const landscape = { ...base, gridTemplateColumns:'1fr 1fr', gridTemplateRows:'1fr' };
+    const portrait  = { ...base, gridTemplateColumns:'1fr', gridTemplateRows:'1fr 1fr' };
+    return <div style={isPortrait ? portrait : landscape}>{children.slice(0, 2)}</div>;
   }
-  // fullscreen (first child)
+
+  // fullscreen
   return (
-    <div style={{ width:'100vw', height:'100vh', padding:12, boxSizing:'border-box' }}>
+    <div style={{ width:'100%', height:'100%', boxSizing:'border-box' }}>
       <div style={{ width:'100%', height:'100%' }}>
         {children[0] || null}
       </div>
@@ -369,8 +408,9 @@ function Wrapper({ layout, children }) {
 function Status({ text }) {
   return (
     <div style={{
+      position:'fixed', inset:0,     // full overlay, no scrollbars
       display:'flex', alignItems:'center', justifyContent:'center',
-      width:'100vw', height:'100vh', background:'#000', color:'#fff'
+      background:'#000', color:'#fff'
     }}>
       {text}
     </div>

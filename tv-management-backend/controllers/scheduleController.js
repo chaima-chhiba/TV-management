@@ -12,9 +12,13 @@ exports.getAllSchedules = async (_req, res) => {
 };
 
 exports.getSchedulesByTv = async (req, res) => {
-  const { tvId } = req.params;
-  const schedules = await Schedule.find({ tvId, enabled: true }).populate('contentId');
-  res.json(schedules);
+  try {
+    const { tvId } = req.params;
+    const schedules = await Schedule.find({ tvId, enabled: true }, '-__v').populate('contentId');
+    res.json(schedules);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 };
 
 exports.updateSchedule = async (req, res) => {

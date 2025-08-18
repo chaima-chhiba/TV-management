@@ -58,6 +58,17 @@ exports.getAllContent = async (req, res) => {
   res.json(contents);
 };
 
+exports.getContentsPublic = async (req, res) => {
+  try {
+    // return minimal fields needed by Display
+    const items = await Content.find({}, '-__v')
+      .sort({ createdAt: 1 });
+    res.json(items);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};
+
 exports.updateContent = async (req, res) => {
   try {
     const b = req.body;
