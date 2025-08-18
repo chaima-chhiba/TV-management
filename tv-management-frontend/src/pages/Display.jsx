@@ -87,14 +87,24 @@ export default function Display() {
   React.useEffect(() => {
     const onKey = (e) => {
       if (!pages.length) return;
-      if (e.key === 'ArrowRight') setPageIdx(i => (i + 1) % pages.length);
-      if (e.key === 'ArrowLeft') setPageIdx(i => (i - 1 + pages.length) % pages.length);
+      if (e.key === 'ArrowRight') goNext();
+      if (e.key === 'ArrowLeft') goPrev();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [pages.length]);
 
- 
+  // NEW: click arrows helpers
+  const goNext = React.useCallback(() => {
+    if (!pages.length) return;
+    setPageIdx(i => (i + 1) % pages.length);
+  }, [pages.length]);
+
+  const goPrev = React.useCallback(() => {
+    if (!pages.length) return;
+    setPageIdx(i => (i - 1 + pages.length) % pages.length);
+  }, [pages.length]);
+
   const onPointerDown = (e) => {
     isPointerDown.current = true;
     startX.current = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
@@ -110,8 +120,8 @@ export default function Display() {
     const dx = endX - (startX.current ?? 0);
     const threshold = 50; // px
     if (Math.abs(dx) >= threshold && pages.length) {
-      if (dx < 0) setPageIdx(i => (i + 1) % pages.length); // swipe left -> next
-      else setPageIdx(i => (i - 1 + pages.length) % pages.length); // swipe right -> prev
+      if (dx < 0) goNext(); // swipe left -> next
+      else goPrev();        // swipe right -> prev
     }
   };
 
@@ -163,6 +173,36 @@ export default function Display() {
       onTouchMove={onPointerMove}
       onTouchEnd={onPointerUp}
     >
+      {/* NEW: on-screen arrows */}
+      <div style={{ position:'fixed', inset:0, zIndex:25, pointerEvents:'none' }}>
+        <button
+          aria-label="Previous"
+          onClick={goPrev}
+          style={{
+            position:'absolute', top:'50%', left:12, transform:'translateY(-50%)',
+            width:72, height:72, borderRadius:'50%',
+            background:'rgba(255,255,255,0.12)', border:'1px solid rgba(255,255,255,.25)',
+            color:'#fff', fontSize:36, fontWeight:800, lineHeight:1,
+            cursor:'pointer', pointerEvents:'auto', display:'flex', alignItems:'center', justifyContent:'center'
+          }}
+        >
+          ‹
+        </button>
+        <button
+          aria-label="Next"
+          onClick={goNext}
+          style={{
+            position:'absolute', top:'50%', right:12, transform:'translateY(-50%)',
+            width:72, height:72, borderRadius:'50%',
+            background:'rgba(255,255,255,0.12)', border:'1px solid rgba(255,255,255,.25)',
+            color:'#fff', fontSize:36, fontWeight:800, lineHeight:1,
+            cursor:'pointer', pointerEvents:'auto', display:'flex', alignItems:'center', justifyContent:'center'
+          }}
+        >
+          ›
+        </button>
+      </div>
+
       {/* HUD */}
       {!hudOff && (
         <div style={{
