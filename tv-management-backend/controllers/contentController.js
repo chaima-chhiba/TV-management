@@ -58,11 +58,10 @@ exports.getAllContent = async (req, res) => {
   res.json(contents);
 };
 
+// ADD: public, read-only content list for Display
 exports.getContentsPublic = async (req, res) => {
   try {
-    // return minimal fields needed by Display
-    const items = await Content.find({}, '-__v')
-      .sort({ createdAt: 1 });
+    const items = await Content.find({}, '-__v').sort({ createdAt: 1 });
     res.json(items);
   } catch (e) {
     res.status(500).json({ error: e.message });

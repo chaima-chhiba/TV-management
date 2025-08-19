@@ -359,10 +359,23 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
           </Field>
 
           <Field label="Time window (local time)">
-            <div style={{ display:'flex', gap:10 }}>
-              <input type="time" value={form.startTime} onChange={e=>handleChange('startTime', e.target.value)} style={inputStyle} />
+            <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
+              <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                <input type="time" value={form.startTime} onChange={e=>handleChange('startTime', e.target.value)} style={inputStyle} />
+                <button type="button" onClick={() => handleChange('startTime', nowHHMM())} style={miniBtn}>Now</button>
+              </div>
               <span style={{ alignSelf:'center', color:'#64748b' }}>to</span>
-              <input type="time" value={form.endTime} onChange={e=>handleChange('endTime', e.target.value)} style={inputStyle} />
+              <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                <input type="time" value={form.endTime} onChange={e=>handleChange('endTime', e.target.value)} style={inputStyle} />
+                <button type="button" onClick={() => handleChange('endTime', nowHHMM())} style={miniBtn}>Now</button>
+              </div>
+              <button
+                type="button"
+                onClick={() => { handleChange('startTime', nowHHMM()); handleChange('endTime', '23:59'); }}
+                style={miniBtnAlt}
+              >
+                Start now → 23:59
+              </button>
             </div>
           </Field>
 
@@ -573,3 +586,29 @@ const buttonStyle = (bg, color) => ({
   cursor: 'pointer',
   minWidth: 120
 });
+
+// NEW: helpers for "Now" buttons in schedule section
+const miniBtn = {
+  padding:'6px 10px',
+  borderRadius:8,
+  border:'1px solid #cbd5e1',
+  background:'#f8fafc',
+  color:'#334155',
+  fontSize:12,
+  fontWeight:700,
+  cursor:'pointer'
+};
+
+const miniBtnAlt = {
+  ...miniBtn,
+  background:'#eef2ff',
+  border:'1px solid #c7d2fe',
+  color:'#3730a3'
+};
+
+const nowHHMM = () => {
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  return `${hh}:${mm}`;
+};

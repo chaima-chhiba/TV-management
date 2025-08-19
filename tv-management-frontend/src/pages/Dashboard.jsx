@@ -2,17 +2,45 @@ import React, { useEffect, useState } from 'react';
 
 import { Monitor, Upload } from 'lucide-react';
 import tvService from '../services/tvService';
-// import getContent if needed
+import contentService from '../services/contentService';
 
 export default function Dashboard() {
   const [tvs, setTvs] = useState([]);
   const [content, setContent] = useState([]);
 
- useEffect(() => {
-  tvService.getTVs().then(data => setTvs(data));
-  // tvService.getContent().then(data => setContent(data)); // if you add content fetching later
-}, []);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [tvList, contentList] = await Promise.all([
+          tvService.getTVs(),
+          contentService.getAll().catch(() => [])
+        ]);
+        if (!mounted) return;
+        setTvs(tvList || []);
+        setContent(Array.isArray(contentList) ? contentList : []);
+      } catch (e) {
+        console.error('Dashboard load failed', e);
+        if (!mounted) return;
+        setTvs([]);
+        setContent([]);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
+  // ADD: poll TVs to reflect status changes from pings
+  useEffect(() => {
+    let alive = true;
+    const poll = async () => {
+      try {
+        const list = await tvService.getTVs();
+        if (alive) setTvs(list || []);
+      } catch {}
+    };
+    const t = setInterval(poll, 10000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
 
   return (
     <div style={{

@@ -357,10 +357,19 @@ function ScheduleEditor({ content, value, onChange, onSave, onCancel, saving }) 
 
         <div>
           <div style={{fontSize:12, color:'#64748b', marginBottom:6}}>Time window (local)</div>
-          <div style={{display:'flex', gap:10}}>
-            <input type="time" value={value.startTime || '00:00'} onChange={e=>set('startTime', e.target.value)} style={input} />
+          <div style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
+            <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+              <input type="time" value={value.startTime || '00:00'} onChange={e=>set('startTime', e.target.value)} style={input} />
+              <button type="button" onClick={() => set('startTime', nowHHMM())} style={miniBtn}>Now</button>
+            </div>
             <span style={{alignSelf:'center', color:'#64748b'}}>to</span>
-            <input type="time" value={value.endTime || '23:59'} onChange={e=>set('endTime', e.target.value)} style={input} />
+            <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+              <input type="time" value={value.endTime || '23:59'} onChange={e=>set('endTime', e.target.value)} style={input} />
+              <button type="button" onClick={() => set('endTime', nowHHMM())} style={miniBtn}>Now</button>
+            </div>
+            <button type="button" onClick={() => { set('startTime', nowHHMM()); set('endTime', '23:59'); }} style={miniBtnAlt}>
+              Start now → 23:59
+            </button>
           </div>
           <div style={{fontSize:12, color:'#64748b', marginTop:6}}>
             Overnight windows supported (e.g., 22:00 to 06:00).
@@ -389,3 +398,28 @@ function ScheduleEditor({ content, value, onChange, onSave, onCancel, saving }) 
     </div>
   );
 }
+
+// helpers
+function nowHHMM() {
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  return `${hh}:${mm}`;
+}
+
+const miniBtn = {
+  padding:'6px 10px',
+  borderRadius:8,
+  border:'1px solid #cbd5e1',
+  background:'#f8fafc',
+  color:'#334155',
+  fontSize:12,
+  fontWeight:700,
+  cursor:'pointer'
+};
+const miniBtnAlt = {
+  ...miniBtn,
+  background:'#eef2ff',
+  border:'1px solid #c7d2fe',
+  color:'#3730a3'
+};

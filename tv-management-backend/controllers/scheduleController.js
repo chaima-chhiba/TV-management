@@ -11,10 +11,11 @@ exports.getAllSchedules = async (_req, res) => {
   res.json(schedules);
 };
 
+// Public: get schedules for a TV (used by Display)
 exports.getSchedulesByTv = async (req, res) => {
   try {
     const { tvId } = req.params;
-    const schedules = await Schedule.find({ tvId, enabled: true }, '-__v').populate('contentId');
+    const schedules = await Schedule.find({ tvId }, '-__v').populate('contentId');
     res.json(schedules);
   } catch (e) {
     res.status(500).json({ error: e.message });

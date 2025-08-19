@@ -2,6 +2,8 @@ import React from 'react';
 import { useParams } from 'react-router-dom';
 import contentPublicService from '../services/contentPublicService';
 import schedulePublicService from '../services/schedulePublicService';
+import tvService from '../services/tvService';
+import tvPublicService from '../services/tvPublicService';
 
 export default function Display() {
   const { tvId } = useParams();
@@ -152,6 +154,31 @@ export default function Display() {
       document.body.style.overflow = prevBody || '';
     };
   }, []);
+
+  // Mark TV online while this screen is open (public)
+  React.useEffect(() => {
+    if (!tvId) return;
+
+    let alive = true;
+    const ping = async (status = 'online') => {
+      try { await tvPublicService.ping(tvId, status); } catch {}
+    };
+
+    // initial and heartbeat
+    ping('online');
+    const hb = setInterval(() => ping('online'), 30000);
+
+    // update on tab visibility
+    const onVis = () => ping(document.visibilityState === 'visible' ? 'online' : 'offline');
+    document.addEventListener('visibilitychange', onVis);
+
+    return () => {
+      alive = false;
+      clearInterval(hb);
+      document.removeEventListener('visibilitychange', onVis);
+      ping('offline');
+    };
+  }, [tvId]);
 
   if (loading) return <Status text="Loading..." />;
   if (error) return <Status text={error} />;

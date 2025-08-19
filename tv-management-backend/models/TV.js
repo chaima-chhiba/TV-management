@@ -1,11 +1,14 @@
 const mongoose = require('mongoose');
 
 const tvSchema = new mongoose.Schema({
-  name: String,
+  name: { type: String, required: true },
   department: String,
-  
-displayKey: { type: String, unique: true },
-  profiles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Profile' }] 
-});
+  location: String,
+  ipAddress: String,
+
+  // ADD: online status tracking
+  status: { type: String, enum: ['online', 'offline'], default: 'offline' },
+  lastSeen: { type: Date }
+}, { timestamps: true });
 
 module.exports = mongoose.model('TV', tvSchema);

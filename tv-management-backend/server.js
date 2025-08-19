@@ -5,13 +5,14 @@ const cors = require('cors');
 const authRoutes = require('./routes/auth');
 const contentRoutes = require('./routes/content');
 const tvRoutes = require('./routes/tv');
-const scheduleRoutes = require('./routes/schedule');
-const profileRoutes = require('./routes/profileRoutes');
-const { authenticateJWT } = require('./middleware/authMiddleware');
 
-// ADD: controllers for public display endpoints
+// ADD: schedule routes
+const scheduleRoutes = require('./routes/schedule');
+
+const { authenticateJWT } = require('./middleware/authMiddleware');
 const contentController = require('./controllers/contentController');
 const scheduleController = require('./controllers/scheduleController');
+const tvController = require('./controllers/tvController');
 
 dotenv.config();
 const app = express();
@@ -23,17 +24,18 @@ app.use(cors());
 app.use(express.json({ limit: BODY_LIMIT }));
 app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }));
 
-app.use('/api/auth', authRoutes);
-
-// ADD: Public, read-only endpoints for TV screens (before protected routes)
+// Public endpoints (no auth)
 app.get('/api/public/content', contentController.getContentsPublic);
 app.get('/api/public/schedule/tv/:tvId', scheduleController.getSchedulesByTv);
+app.post('/api/public/tv/:id/ping', tvController.pingPublicTV);
 
 // Protected routes
+app.use('/api/auth', authRoutes);
 app.use('/api/content', authenticateJWT, contentRoutes);
 app.use('/api/tv', authenticateJWT, tvRoutes);
+
+// ADD: mount schedule API (this fixes POST /api/schedule 404)
 app.use('/api/schedule', authenticateJWT, scheduleRoutes);
-app.use('/api/profiles', authenticateJWT, profileRoutes);
 
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
