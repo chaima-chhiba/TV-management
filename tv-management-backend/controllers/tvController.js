@@ -37,3 +37,17 @@ exports.deleteTV = async (req, res) => {
   await TV.findByIdAndDelete(req.params.id);
   res.sendStatus(204);
 };
+
+// Public: fetch TV by exact name (case-sensitive). Adjust if you want case-insensitive.
+exports.getByNamePublic = async (req, res) => {
+  try {
+    const name = decodeURIComponent(req.params.name || '');
+    if (!name) return res.status(400).json({ error: 'name required' });
+    // For case-insensitive lookup, use { name: new RegExp(`^${escapeRegExp(name)}$`, 'i') }
+    const tv = await TV.findOne({ name }, '-__v');
+    if (!tv) return res.status(404).json({ error: 'TV not found' });
+    res.json(tv);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+};

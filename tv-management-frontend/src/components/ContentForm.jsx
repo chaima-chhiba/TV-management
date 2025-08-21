@@ -2,12 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Image as ImageIcon, FileText, Video, Save, X } from 'lucide-react';
 import tvService from '../services/tvService';
 
-const layoutOptions = [
-  { value: 'fullscreen', label: 'Full Screen' },
-  { value: 'split2', label: '2 Split' },
-  { value: 'split4', label: '4 Split' }
-];
-
 const typeOptions = [
   { value: 'text', label: 'Text', icon: FileText },
   { value: 'image', label: 'Image', icon: ImageIcon },
@@ -16,13 +10,8 @@ const typeOptions = [
 
 export default function ContentForm({ initial, onSubmit, onCancel, submitting }) {
   const [tvs, setTvs] = useState([]);
-
-  useEffect(() => {
-    tvService.getTVs().then(setTvs).catch(console.error);
-  }, []);
-
-  // NEW: support multiple media items for image/video
   const [mediaList, setMediaList] = useState([]); // [{ name, preview, fileBase64, fileMime, url }]
+  const [errors, setErrors] = useState({}); // ADD: validation errors
 
   const [form, setForm] = useState(() => ({
     title: initial?.title || '',
@@ -30,18 +19,22 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
     type: initial?.type || 'text',
     url: initial?.url || '',
     textContent: initial?.content || '',
-    layout: initial?.layout || 'fullscreen',
+    // CHANGED: default to empty (Auto)
+    layout: initial?.layout || 'auto', // default to Auto
     tv: initial?.tv?._id || initial?.tv || '',
     fileBase64: initial?.mediaDataUrl ? initial.mediaDataUrl.split(',')[1] : '',
     fileMime: initial?.mediaDataUrl ? initial.mediaDataUrl.match(/^data:(.*?);/)[1] : '',
-    // ADD: schedule defaults
-    scheduleEnabled: false,
+    scheduleEnabled: true,
     daysOfWeek: [0,1,2,3,4,5,6],
     startTime: '00:00',
     endTime: '23:59',
     startDate: '',
     endDate: ''
   }));
+
+  useEffect(() => {
+    tvService.getTVs().then(setTvs).catch(console.error);
+  }, []);
 
   const handleChange = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -62,21 +55,15 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
     arr.forEach(file => {
       const reader = new FileReader();
       reader.onloadend = () => {
-        const result = reader.result; // data URL
+        const result = reader.result;
         const base64 = result.split(',')[1];
         const mime = result.match(/^data:(.*?);/)[1];
         setMediaList(prev => [
           ...prev,
-          {
-            name: file.name,
-            preview: result,
-            fileBase64: base64,
-            fileMime: mime,
-            url: ''
-          }
+          { name: file.name, preview: result, fileBase64: base64, fileMime: mime, url: '' }
         ]);
-        // clear single-slot fields so multi mode is unambiguous
         setForm(p => ({ ...p, fileBase64: '', fileMime: '', url: '' }));
+        setErrors(prev => ({ ...prev, media: undefined })); // clear media error
       };
       reader.readAsDataURL(file);
     });
@@ -101,35 +88,47 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
       { name: u.split('/').pop() || 'URL', preview: u, fileBase64: '', fileMime: '', url: u }
     ]);
     setForm(p => ({ ...p, url: '', fileBase64: '', fileMime: '' }));
+    setErrors(prev => ({ ...prev, media: undefined })); // clear media error
   };
 
   const removeMediaAt = (idx) => {
     setMediaList(prev => prev.filter((_, i) => i !== idx));
   };
 
-  // UPDATED: submit can create many items (one per media)
+  // UPDATED: submit always requires TV + schedule
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (form.scheduleEnabled && !form.tv) {
-      alert('Select a target TV to schedule this content.');
+
+    // Validate TV
+    if (!form.tv) {
+      alert('Select a target TV (scheduling is required).');
       return;
+    }
+
+    // Validate media when type is image/video
+    if (form.type !== 'text') {
+      const hasMedia = mediaList.length > 0 || !!form.fileBase64 || !!form.url;
+      if (!hasMedia) {
+        setErrors(prev => ({ ...prev, media: `Please add at least one ${form.type}.` }));
+        return;
+      }
     }
 
     const common = {
       description: form.description.trim(),
       type: form.type,
-      layout: form.layout,
+      // Only send layout if user chose one; blank means Auto (Display decides)
+      layout: form.layout || 'auto', // ensure a value is sent
       tv: form.tv || null,
       content: form.type === 'text' ? form.textContent.trim() : undefined,
-      // schedule payload (reused for all items)
-      schedule: form.scheduleEnabled ? {
+      schedule: {
         enabled: true,
         daysOfWeek: form.daysOfWeek,
         startTime: form.startTime,
         endTime: form.endTime,
         startDate: form.startDate || undefined,
         endDate: form.endDate || undefined
-      } : { enabled: false }
+      }
     };
 
     // Single text OR no multi-media selected -> fallback to single payload
@@ -214,16 +213,20 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
           </div>
         </Field>
 
-        <Field label="Layout" required>
-            <select
-              value={form.layout}
-              onChange={e => handleChange('layout', e.target.value)}
-              style={inputStyle}
-            >
-              {layoutOptions.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+        <Field label="Layout">
+          <select
+            value={form.layout}
+            onChange={e => setForm(p => ({ ...p, layout: e.target.value }))}
+            style={inputStyle}
+          >
+            <option value="auto">Auto (Display decides)</option>
+            <option value="fullscreen">Full Screen</option>
+            <option value="split2">2 Split</option>
+            <option value="split4">4 Split</option>
+          </select>
+          <div style={{ fontSize:12, color:'#64748b', marginTop:6 }}>
+            Leave as Auto to let the Display choose layout dynamically.
+          </div>
         </Field>
 
         <Field label="Target TV">
@@ -231,8 +234,9 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
             value={form.tv}
             onChange={e => handleChange('tv', e.target.value)}
             style={inputStyle}
+            required
           >
-            <option value="">All / None</option>
+            <option value="" disabled>Select TV</option>
             {tvs.map(tv => (
               <option key={tv._id || tv.id} value={tv._id || tv.id}>
                 {tv.name || tv.tvId || 'TV'}
@@ -315,79 +319,70 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
               {form.fileBase64 ? 'Using embedded file.' : 'Using external URL.'}
             </small>
           )}
+
+          {errors.media && (
+            <div style={{ color:'#b91c1c', fontSize:12, marginTop:6 }}>
+              {errors.media}
+            </div>
+          )}
         </Field>
       )}
 
-      {/* Schedule toggle */}
-      <Field label="Schedule (optional)">
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-          <input
-            type="checkbox"
-            checked={form.scheduleEnabled}
-            onChange={e => handleChange('scheduleEnabled', e.target.checked)}
-          />
-          <span style={{ color:'#475569' }}>Enable schedule for this content</span>
+      {/* Always show schedule editor (since required) */}
+      <Field label="Days of week">
+        <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+          {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((lbl, idx) => {
+            const active = form.daysOfWeek.includes(idx);
+            return (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => toggleDay(idx)}
+                style={{
+                  padding:'6px 10px',
+                  borderRadius:8,
+                  border:'1px solid ' + (active ? '#2563eb' : '#cbd5e1'),
+                  background: active ? '#2563eb' : '#fff',
+                  color: active ? '#fff' : '#334155',
+                  fontSize:12,
+                  fontWeight:600
+                }}
+              >
+                {lbl}
+              </button>
+            );
+          })}
         </div>
       </Field>
 
-      {form.scheduleEnabled && (
-        <>
-          <Field label="Days of week">
-            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-              {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((lbl, idx) => {
-                const active = form.daysOfWeek.includes(idx);
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => toggleDay(idx)}
-                    style={{
-                      padding:'6px 10px',
-                      borderRadius:8,
-                      border:'1px solid ' + (active ? '#2563eb' : '#cbd5e1'),
-                      background: active ? '#2563eb' : '#fff',
-                      color: active ? '#fff' : '#334155',
-                      fontSize:12,
-                      fontWeight:600
-                    }}
-                  >
-                    {lbl}
-                  </button>
-                );
-              })}
-            </div>
-          </Field>
+      <Field label="Time window (local time)">
+        <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
+          <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+            <input type="time" value={form.startTime} onChange={e=>handleChange('startTime', e.target.value)} style={inputStyle} />
+            <button type="button" onClick={() => handleChange('startTime', nowHHMM())} style={miniBtn}>Now</button>
+          </div>
+          <span style={{ alignSelf:'center', color:'#64748b' }}>to</span>
+          <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+            <input type="time" value={form.endTime} onChange={e=>handleChange('endTime', e.target.value)} style={inputStyle} />
+            <button type="button" onClick={() => handleChange('endTime', nowHHMM())} style={miniBtn}>Now</button>
+          </div>
+          <button
+            type="button"
+            onClick={() => { handleChange('startTime', nowHHMM()); handleChange('endTime', '23:59'); }}
+            style={miniBtnAlt}
+          >
+            Start now → 23:59
+          </button>
+        </div>
+      </Field>
 
-          <Field label="Time window (local time)">
-            <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
-              <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-                <input type="time" value={form.startTime} onChange={e=>handleChange('startTime', e.target.value)} style={inputStyle} />
-                <button type="button" onClick={() => handleChange('startTime', nowHHMM())} style={miniBtn}>Now</button>
-              </div>
-              <span style={{ alignSelf:'center', color:'#64748b' }}>to</span>
-              <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-                <input type="time" value={form.endTime} onChange={e=>handleChange('endTime', e.target.value)} style={inputStyle} />
-                <button type="button" onClick={() => handleChange('endTime', nowHHMM())} style={miniBtn}>Now</button>
-              </div>
-              <button
-                type="button"
-                onClick={() => { handleChange('startTime', nowHHMM()); handleChange('endTime', '23:59'); }}
-                style={miniBtnAlt}
-              >
-                Start now → 23:59
-              </button>
-            </div>
-          </Field>
-
-          <Field label="Date range (optional)">
-            <div style={{ display:'flex', gap:10 }}>
-              <input type="date" value={form.startDate} onChange={e=>handleChange('startDate', e.target.value)} style={inputStyle} />
-              <span style={{ alignSelf:'center', color:'#64748b' }}>to</span>
-              <input type="date" value={form.endDate} onChange={e=>handleChange('endDate', e.target.value)} style={inputStyle} />
-            </div>
-          </Field>
-        </>
-      )}
+      <Field label="Date range (optional)">
+        <div style={{ display:'flex', gap:10 }}>
+          <input type="date" value={form.startDate} onChange={e=>handleChange('startDate', e.target.value)} style={inputStyle} />
+          <span style={{ alignSelf:'center', color:'#64748b' }}>to</span>
+          <input type="date" value={form.endDate} onChange={e=>handleChange('endDate', e.target.value)} style={inputStyle} />
+        </div>
+      </Field>
 
       <div style={previewBoxStyle}>
         <div style={previewLabelStyle}>Preview</div>

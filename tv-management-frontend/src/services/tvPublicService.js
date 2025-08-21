@@ -9,6 +9,11 @@ const tvPublicService = {
     });
     if (!r.ok) throw new Error(`TV ping failed ${r.status}`);
     return r.json();
+  },
+  async getByName(name) {
+    const r = await fetch(`${API_BASE}/api/public/tv/by-name/${encodeURIComponent(name)}`);
+    if (!r.ok) throw new Error(`GET tv by name ${r.status}`);
+    return r.json();
   }
 };
 

@@ -7,6 +7,7 @@ import TVs from './pages/TVs';
 import ContentLibrary from './pages/ContentLibrary';
 import Display from './pages/Display'; 
 import Schedule from './pages/Schedule'; 
+import ToastProvider from './components/ToastProvider';
 
 function Layout() {
   return (
@@ -21,26 +22,28 @@ function Layout() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Login without layout */}
-        <Route path="/login" element={<Login />} />
+    <ToastProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Login without layout */}
+          <Route path="/login" element={<Login />} />
 
-        {/* Public display without Topbar */}
-        <Route path="/display/:tvId" element={<Display />} /> {/* ADD */}
+          {/* Public display without Topbar */}
+          <Route path="/display/:tvId" element={<Display />} /> {/* ADD */}
 
-        {/* App routes with Topbar */}
-        <Route element={<Layout />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/tvs" element={<TVs />} />
-          <Route path="/content" element={<ContentLibrary />} />
-          <Route path="/schedule" element={<Schedule />} />
-        </Route>
+          {/* App routes with Topbar */}
+          <Route element={<Layout />}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/tvs" element={<TVs />} />
+            <Route path="/content" element={<ContentLibrary />} />
+            <Route path="/schedule" element={<Schedule />} />
+          </Route>
 
-        {/* Fallback */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </ToastProvider>
   );
 }

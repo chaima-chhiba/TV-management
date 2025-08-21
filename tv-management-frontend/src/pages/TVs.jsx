@@ -33,23 +33,10 @@ export default function TVs() {
     setTvs(prev => prev.filter(tv => getId(tv) !== id));
   };
 
-  const displayUrl = (id) => `${window.location.origin}/display/${id}`;
-
-  const openDisplay = (id) => {
-    window.open(displayUrl(id), '_blank', 'noopener,noreferrer');
-  };
-
-  const copyDisplay = async (id) => {
-    try {
-      await navigator.clipboard.writeText(displayUrl(id));
-      alert('Display link copied');
-    } catch {
-      alert('Copy failed');
-    }
-  };
-
-  const openAllDisplays = () => {
-    tvs.forEach(tv => openDisplay(getId(tv)));
+  const displayUrl = (name) => `${window.location.origin}/display/${encodeURIComponent(name)}`;
+  const openDisplay = (name) => window.open(displayUrl(name), '_blank', 'noopener,noreferrer');
+  const copyDisplay = async (name) => {
+    try { await navigator.clipboard.writeText(displayUrl(name)); } catch {}
   };
 
   return (
@@ -57,15 +44,6 @@ export default function TVs() {
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:24}}>
         <h2 style={{margin:0, fontSize:28, fontWeight:700, color:'#1e293b'}}>TVs</h2>
         <div style={{display:'flex', gap:12}}>
-          {tvs.length > 0 && (
-            <button
-              onClick={openAllDisplays}
-              style={topBtnStyle('#6366f1')}
-              title="Open all displays"
-            >
-              <Play size={16}/> Open All
-            </button>
-          )}
           <button
             onClick={()=>{ setShowAddForm(true); setEditingTV(null); }}
             style={topBtnStyle('#2563eb')}
@@ -92,11 +70,12 @@ export default function TVs() {
       <div style={{display:'grid', gap:24, gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))'}}>
         {tvs.map(tv => {
           const id = getId(tv);
+          const name = tv.name || `TV-${id}`;
           return (
             <div key={id} style={cardStyle}>
               <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
                 <div>
-                  <div style={{fontWeight:600, fontSize:18}}>{tv.name || tv.tvId}</div>
+                  <div style={{fontWeight:600, fontSize:18}}>{name}</div>
                   <div style={{fontSize:13, color:'#64748b'}}>{tv.department || '—'}</div>
                 </div>
                 <span style={{
@@ -106,10 +85,10 @@ export default function TVs() {
               </div>
 
               <div style={{display:'flex', flexWrap:'wrap', gap:8, marginTop:14}}>
-                <button onClick={()=>openDisplay(id)} style={pillBtn('#eef2ff','#3730a3')}>
+                <button onClick={()=>openDisplay(name)} style={pillBtn('#eef2ff','#3730a3')}>
                   <ExternalLink size={14}/> Open
                 </button>
-                <button onClick={()=>copyDisplay(id)} style={pillBtn('#f1f5f9','#334155')}>
+                <button onClick={()=>copyDisplay(name)} style={pillBtn('#f1f5f9','#334155')}>
                   <Copy size={14}/> Copy Link
                 </button>
                 <button

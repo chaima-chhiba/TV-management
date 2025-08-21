@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import contentService from '../services/contentService';
 import ContentForm from '../components/ContentForm';
 import ContentCard from '../components/ContentCard';
+import { useToast } from '../components/ToastProvider'; // ADD
 
 export default function ContentLibrary() {
   const [content, setContent] = useState([]);
@@ -18,11 +19,16 @@ export default function ContentLibrary() {
 
   // NEW: preview modal state
   const [previewItem, setPreviewItem] = useState(null);
+  const toast = useToast(); // ADD
 
   const load = () => {
     setLoading(true);
     contentService.getAll()
       .then(setContent)
+      .catch((e) => {
+        console.error(e);
+        toast.error('Failed to load content'); // ADD
+      })
       .finally(()=>setLoading(false));
   };
 
@@ -63,9 +69,10 @@ export default function ContentLibrary() {
       setShowForm(false);
       setEditing(null);
       load();
+      toast.success(editing ? 'Content updated' : 'Content created'); // ADD
     } catch (e) {
       console.error(e);
-      alert('Save failed');
+      toast.error('Save failed'); // REPLACE alert
     } finally {
       setSaving(false);
     }
@@ -76,9 +83,10 @@ export default function ContentLibrary() {
     try {
       await contentService.remove(id);
       setContent(prev => prev.filter(c => (c._id || c.id) !== id));
+      toast.success('Content deleted'); // ADD
     } catch (e) {
       console.error(e);
-      alert('Delete failed');
+      toast.error('Delete failed'); // REPLACE alert
     }
   };
 

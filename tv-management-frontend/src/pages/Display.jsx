@@ -6,7 +6,10 @@ import tvService from '../services/tvService';
 import tvPublicService from '../services/tvPublicService';
 
 export default function Display() {
-  const { tvId } = useParams();
+  const { tvId } = useParams(); // this can now be an id or a name
+
+  const [resolvedId, setResolvedId] = React.useState(null);
+  const [resolveErr, setResolveErr] = React.useState('');
 
   const [pages, setPages] = React.useState([]); // [{ layout, slots, duration }]
   const [pageIdx, setPageIdx] = React.useState(0);
@@ -17,12 +20,37 @@ export default function Display() {
   // HUD state (time + weather)
   const [now, setNow] = React.useState(new Date());
   const [weather, setWeather] = React.useState(null);
+  const [message, setMessage] = React.useState(''); // ADD
 
   // swipe state
   const startX = React.useRef(null);
   const isPointerDown = React.useRef(false);
 
+  // Resolve tvId (id or name) to a concrete DB id for APIs
   React.useEffect(() => {
+    setResolvedId(null);
+    setResolveErr('');
+    if (!tvId) return;
+
+    const isObjectId = /^[a-f0-9]{24}$/i.test(tvId);
+    if (isObjectId) {
+      setResolvedId(tvId);
+      return;
+    }
+    // Resolve by name via public endpoint
+    (async () => {
+      try {
+        const tv = await tvPublicService.getByName(tvId);
+        setResolvedId(tv._id || tv.id);
+      } catch (e) {
+        setResolveErr('TV not found');
+      }
+    })();
+  }, [tvId]);
+
+  // Fetch content/schedules once we have the concrete id
+  React.useEffect(() => {
+    if (!resolvedId) return;
     let mounted = true;
     (async () => {
       try {
@@ -31,7 +59,7 @@ export default function Display() {
 
         const [allContent, tvSchedules] = await Promise.all([
           contentPublicService.getAll().catch(() => []),
-          schedulePublicService.getByTv(tvId).catch(() => [])
+          schedulePublicService.getByTv(resolvedId).catch(() => [])
         ]);
 
         if (!mounted) return;
@@ -39,7 +67,7 @@ export default function Display() {
         const sourceContent = allContent.filter(c => {
           if (!c.tv) return true; // global
           const cid = c.tv._id || c.tv;
-          return String(cid) === String(tvId);
+          return String(cid) === String(resolvedId);
         });
 
         const baseItems = sourceContent.map(n => ({
@@ -60,7 +88,7 @@ export default function Display() {
       }
     })();
     return () => { mounted = false; };
-  }, [tvId]);
+  }, [resolvedId]);
 
   // Auto-advance timer based on current page duration
   React.useEffect(() => {
@@ -155,46 +183,58 @@ export default function Display() {
     };
   }, []);
 
-  // Mark TV online while this screen is open (public)
+  // Public ping uses resolved id
   React.useEffect(() => {
-    if (!tvId) return;
+    if (!resolvedId) return;
 
-    let alive = true;
     const ping = async (status = 'online') => {
-      try { await tvPublicService.ping(tvId, status); } catch {}
+      try { await tvPublicService.ping(resolvedId, status); } catch {}
     };
 
-    // initial and heartbeat
     ping('online');
     const hb = setInterval(() => ping('online'), 30000);
-
-    // update on tab visibility
     const onVis = () => ping(document.visibilityState === 'visible' ? 'online' : 'offline');
     document.addEventListener('visibilitychange', onVis);
 
     return () => {
-      alive = false;
       clearInterval(hb);
       document.removeEventListener('visibilitychange', onVis);
       ping('offline');
     };
-  }, [tvId]);
+  }, [resolvedId]);
+
+  React.useEffect(() => {
+    // pick a random message and rotate every 60s
+    const msgs = [
+      'Welcome!',
+      'Have a great day!',
+      'Stay safe!',
+      'Remember to hydrate.',
+      'Be kind. Work hard.',
+      'Keep smiling!',
+      'You are awesome!'
+    ];
+    const pick = () => setMessage(msgs[Math.floor(Math.random() * msgs.length)]);
+    pick();
+    const t = setInterval(pick, 60000);
+    return () => clearInterval(t);
+  }, []);
 
   if (loading) return <Status text="Loading..." />;
   if (error) return <Status text={error} />;
-  if (!pages.length) return <Status text="No items to display" />;
+  if (resolveErr) return <Status text={resolveErr} />;
 
-  const current = pages[pageIdx];
+  const useFallback = pages.length === 0; // ADD
   const hudOff = new URLSearchParams(window.location.search).get('hud') === '0';
 
   return (
     <div
       ref={containerRef}
       style={{
-        position:'fixed', inset:0,            // full screen without 100vw/100vh quirks
+        position:'fixed', inset:0,
         background:'#000',
-        touchAction:'none',                    // prevent page scroll on touch
-        overflow:'hidden'                      // hide any sub-pixel overflow
+        touchAction:'none',
+        overflow:'hidden'
       }}
       onMouseDown={onPointerDown}
       onMouseMove={onPointerMove}
@@ -203,38 +243,16 @@ export default function Display() {
       onTouchMove={onPointerMove}
       onTouchEnd={onPointerUp}
     >
-      {/* NEW: on-screen arrows */}
-      <div style={{ position:'fixed', inset:0, zIndex:25, pointerEvents:'none' }}>
-        <button
-          aria-label="Previous"
-          onClick={goPrev}
-          style={{
-            position:'absolute', top:'50%', left:12, transform:'translateY(-50%)',
-            width:72, height:72, borderRadius:'50%',
-            background:'rgba(255,255,255,0.12)', border:'1px solid rgba(255,255,255,.25)',
-            color:'#fff', fontSize:36, fontWeight:800, lineHeight:1,
-            cursor:'pointer', pointerEvents:'auto', display:'flex', alignItems:'center', justifyContent:'center'
-          }}
-        >
-          ‹
-        </button>
-        <button
-          aria-label="Next"
-          onClick={goNext}
-          style={{
-            position:'absolute', top:'50%', right:12, transform:'translateY(-50%)',
-            width:72, height:72, borderRadius:'50%',
-            background:'rgba(255,255,255,0.12)', border:'1px solid rgba(255,255,255,.25)',
-            color:'#fff', fontSize:36, fontWeight:800, lineHeight:1,
-            cursor:'pointer', pointerEvents:'auto', display:'flex', alignItems:'center', justifyContent:'center'
-          }}
-        >
-          ›
-        </button>
-      </div>
+      {/* Arrows only when there are pages */}
+      {!useFallback && (
+        <div style={{ position:'fixed', inset:0, zIndex:25, pointerEvents:'none' }}>
+          <button aria-label="Previous" onClick={goPrev} style={arrowBtn('left')}>‹</button>
+          <button aria-label="Next" onClick={goNext} style={arrowBtn('right')}>›</button>
+        </div>
+      )}
 
-      {/* HUD */}
-      {!hudOff && (
+      {/* HUD (keep for pages; hidden in fallback because fallback shows time/info centered) */}
+      {!useFallback && !hudOff && (
         <div style={{
           position:'fixed', top:12, right:12, zIndex:20, color:'#fff',
           textShadow:'0 1px 2px rgba(0,0,0,.7)', display:'flex', flexDirection:'column', alignItems:'flex-end',
@@ -254,14 +272,57 @@ export default function Display() {
         </div>
       )}
 
-      <Wrapper layout={current.layout}>
-        {current.slots.map((item, idx) => (
-          // pass layout for responsive text sizing
-          <Render key={(item?._id || item?.id || idx) + '_' + idx} item={item} layout={current.layout} />
-        ))}
-      </Wrapper>
+      {useFallback ? (
+        <DefaultScreen now={now} weather={weather} message={message} />
+      ) : (
+        <Wrapper layout={pages[pageIdx].layout}>
+          {pages[pageIdx].slots.map((item, idx) => (
+            <Render key={(item?._id || item?.id || idx) + '_' + idx} item={item} layout={pages[pageIdx].layout} />
+          ))}
+        </Wrapper>
+      )}
     </div>
   );
+}
+
+// ADD: centered default screen when there is no content for this TV
+function DefaultScreen({ now, weather, message }) {
+  return (
+    <div style={{
+      position:'absolute', inset:0, display:'flex', flexDirection:'column',
+      alignItems:'center', justifyContent:'center', color:'#fff',
+      textAlign:'center', padding:24, gap:10, fontFamily:'system-ui, Segoe UI, Roboto, sans-serif'
+    }}>
+      <div style={{ fontSize:'16vmin', fontWeight:900, lineHeight:1, letterSpacing:2 }}>
+        {now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}
+      </div>
+      <div style={{ fontSize:'3.6vmin', opacity:.9 }}>
+        {now.toLocaleDateString()}
+      </div>
+      {weather && (
+        <div style={{ fontSize:'3vmin', opacity:.9, marginTop:12 }}>
+          {Math.round(weather.temp)}°C • {weather.pressure} hPa{weather.humidity != null ? ` • ${weather.humidity}%` : ''}
+        </div>
+      )}
+      <div style={{ fontSize:'4vmin', fontWeight:700, marginTop:18, color:'#a5b4fc' }}>
+        {message}
+      </div>
+    </div>
+  );
+}
+
+// ADD: button style helper
+function arrowBtn(side) {
+  const pos = side === 'left'
+    ? { left:12, transform:'translateY(-50%)' }
+    : { right:12, transform:'translateY(-50%)' };
+  return {
+    position:'absolute', top:'50%', ...pos,
+    width:72, height:72, borderRadius:'50%',
+    background:'rgba(255,255,255,0.12)', border:'1px solid rgba(255,255,255,.25)',
+    color:'#fff', fontSize:36, fontWeight:800, lineHeight:1,
+    cursor:'pointer', pointerEvents:'auto', display:'flex', alignItems:'center', justifyContent:'center'
+  };
 }
 
 function isAllowedNow(content, schedules) {
@@ -292,21 +353,58 @@ function isAllowedNow(content, schedules) {
   });
 }
 
-// Build pages dynamically: up to 4 items per page
+// Build pages: fullscreen items get their own page; others auto-chunk up to 4
 function buildDynamicPages(items) {
-  const SLOTS = 4;
   const sorted = [...items].sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
   const pages = [];
-  for (let i = 0; i < sorted.length; i += SLOTS) {
-    const chunk = sorted.slice(i, i + SLOTS);
-    const layout = decideLayout(chunk.length);
-    const duration = Math.max(...chunk.map(s => Number(s?.duration) || 0), 10);
-    // If fewer than 4, pad with nulls so grid keeps shape
-    const padded = [...chunk];
-    while (padded.length < SLOTS) padded.push(null);
-    pages.push({ layout, slots: padded, duration });
+  let autoBucket = [];    // items with no explicit layout (auto)
+  let split2Bucket = [];  // items explicitly marked split2
+
+  const flushAuto = () => {
+    if (!autoBucket.length) return;
+    const count = autoBucket.length;
+    const layout = decideLayout(count); // fullscreen, split2, or split4
+    const duration = Math.max(...autoBucket.map(s => Number(s?.duration) || 0), 10);
+    let slots = [...autoBucket];
+    if (layout === 'split4') {
+      while (slots.length < 4) slots.push(null);
+    }
+    pages.push({ layout, slots, duration });
+    autoBucket = [];
+  };
+
+  const flushSplit2Pairs = () => {
+    while (split2Bucket.length >= 2) {
+      const pair = split2Bucket.splice(0, 2);
+      const duration = Math.max(...pair.map(s => Number(s?.duration) || 0), 10);
+      pages.push({ layout: 'split2', slots: pair, duration });
+    }
+  };
+
+  for (const it of sorted) {
+    const layout = (it.layout || '').toLowerCase();
+    if (layout === 'fullscreen') {
+      flushSplit2Pairs();
+      if (split2Bucket.length === 1) autoBucket.push(split2Bucket.pop()); // avoid half-empty split2
+      flushAuto();
+      pages.push({ layout: 'fullscreen', slots: [it], duration: Number(it.duration) || 10 });
+      continue;
+    }
+    if (layout === 'split2') {
+      split2Bucket.push(it);
+      flushSplit2Pairs();
+      continue;
+    }
+    // auto
+    autoBucket.push(it);
+    if (autoBucket.length === 4) flushAuto();
   }
-  // If no items at all, return empty
+
+  // End flush
+  flushSplit2Pairs();
+  if (split2Bucket.length === 1) autoBucket.push(split2Bucket.pop());
+  flushAuto();
+
   return pages;
 }
 

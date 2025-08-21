@@ -6,7 +6,7 @@ const contentSchema = new mongoose.Schema({
   type: { type: String, enum: ['text', 'image', 'video'], required: true },
   content: String,
   url: String,
-  layout: { type: String, enum: ['fullscreen', 'split2', 'split4'], required: true },
+  layout: { type: String, enum: ['auto', 'fullscreen', 'split2', 'split4'], default: 'auto', required: true },
   tv: { type: mongoose.Schema.Types.ObjectId, ref: 'TV' },
   profile: { type: mongoose.Schema.Types.ObjectId, ref: 'Profile' },
   media: {

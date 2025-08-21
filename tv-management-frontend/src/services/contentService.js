@@ -33,12 +33,11 @@ const contentService = {
     return res.json();
   },
   async remove(id) {
-    const res = await fetch(`${API_URL}/${id}`, {
-      method: 'DELETE',
-      headers: authHeaders()
-    });
-    if (!res.ok) throw new Error('Failed to delete content');
-    return res.json();
+    const res = await fetch(`${API_URL}/${id}`, { method: 'DELETE', headers: authHeaders() });
+    if (res.status === 204) return { ok: true }; // success, no body
+    if (!res.ok) throw new Error(`DELETE content ${res.status}`);
+    const ct = res.headers.get('content-type') || '';
+    return ct.includes('application/json') ? res.json() : { ok: true };
   }
 };
 
