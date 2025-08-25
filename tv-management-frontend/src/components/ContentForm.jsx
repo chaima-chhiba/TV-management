@@ -13,23 +13,26 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
   const [mediaList, setMediaList] = useState([]); // [{ name, preview, fileBase64, fileMime, url }]
   const [errors, setErrors] = useState({}); // ADD: validation errors
 
+  // NEW: detect edit mode
+  const isEditing = !!(initial && (initial._id || initial.id));
+
   const [form, setForm] = useState(() => ({
     title: initial?.title || '',
     description: initial?.description || '',
     type: initial?.type || 'text',
     url: initial?.url || '',
     textContent: initial?.content || '',
-    // CHANGED: default to empty (Auto)
-    layout: initial?.layout || 'auto', // default to Auto
+    layout: initial?.layout || 'auto',
     tv: initial?.tv?._id || initial?.tv || '',
     fileBase64: initial?.mediaDataUrl ? initial.mediaDataUrl.split(',')[1] : '',
     fileMime: initial?.mediaDataUrl ? initial.mediaDataUrl.match(/^data:(.*?);/)[1] : '',
+    // schedule state kept for create; hidden during edit
     scheduleEnabled: true,
-    daysOfWeek: [0,1,2,3,4,5,6],
-    startTime: '00:00',
-    endTime: '23:59',
-    startDate: '',
-    endDate: ''
+    daysOfWeek: initial?.schedule?.daysOfWeek || [0,1,2,3,4,5,6],
+    startTime: initial?.schedule?.startTime || '00:00',
+    endTime: initial?.schedule?.endTime || '23:59',
+    startDate: initial?.schedule?.startDate ? initial.schedule.startDate.slice(0,10) : '',
+    endDate: initial?.schedule?.endDate ? initial.schedule.endDate.slice(0,10) : ''
   }));
 
   useEffect(() => {
@@ -95,13 +98,12 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
     setMediaList(prev => prev.filter((_, i) => i !== idx));
   };
 
-  // UPDATED: submit always requires TV + schedule
+  // UPDATED: submit always requires TV; schedule only on create
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validate TV
     if (!form.tv) {
-      alert('Select a target TV (scheduling is required).');
+      alert('Select a target TV.');
       return;
     }
 
@@ -114,24 +116,26 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
       }
     }
 
+    const scheduleData = {
+      enabled: true,
+      daysOfWeek: form.daysOfWeek,
+      startTime: form.startTime,
+      endTime: form.endTime,
+      startDate: form.startDate || undefined,
+      endDate: form.endDate || undefined
+    };
+
     const common = {
       description: form.description.trim(),
       type: form.type,
-      // Only send layout if user chose one; blank means Auto (Display decides)
-      layout: form.layout || 'auto', // ensure a value is sent
+      layout: form.layout || 'auto',
       tv: form.tv || null,
       content: form.type === 'text' ? form.textContent.trim() : undefined,
-      schedule: {
-        enabled: true,
-        daysOfWeek: form.daysOfWeek,
-        startTime: form.startTime,
-        endTime: form.endTime,
-        startDate: form.startDate || undefined,
-        endDate: form.endDate || undefined
-      }
+      // include schedule only when creating
+      ...(isEditing ? {} : { schedule: scheduleData })
     };
 
-    // Single text OR no multi-media selected -> fallback to single payload
+    // Single text OR no multi-media selected -> single payload
     if (form.type === 'text' || mediaList.length === 0) {
       const payload = {
         ...common,
@@ -144,7 +148,7 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
       return;
     }
 
-    // Multi-create: one payload per media item
+    // Multi-create: one payload per media item (create only scenario)
     const baseTitle = form.title.trim();
     for (let i = 0; i < mediaList.length; i++) {
       const m = mediaList[i];
@@ -160,12 +164,9 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
         fileBase64: m.fileBase64 || undefined,
         fileMime: m.fileMime || undefined
       };
-      // onSubmit may return a promise; await to avoid overloading backend
       // eslint-disable-next-line no-await-in-loop
       await onSubmit(payload);
     }
-    // Optional: close modal after bulk
-    // onCancel?.();
   };
 
   return (
@@ -176,6 +177,13 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
           <X size={18} />
         </button>
       </div>
+
+      {/* Optional info banner during edit */}
+      {isEditing && (
+        <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: '#fff7ed', border: '1px solid #ffedd5', color: '#9a3412', fontSize: 13, fontWeight: 600 }}>
+          Schedule is managed separately. This edit will not change the schedule.
+        </div>
+      )}
 
       <div style={gridStyle}>
         <Field label="Title" required>
@@ -328,61 +336,65 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
         </Field>
       )}
 
-      {/* Always show schedule editor (since required) */}
-      <Field label="Days of week">
-        <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-          {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((lbl, idx) => {
-            const active = form.daysOfWeek.includes(idx);
-            return (
+      {/* Schedule: show only on create */}
+      {!isEditing && (
+        <>
+          <Field label="Days of week">
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+              {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((lbl, idx) => {
+                const active = form.daysOfWeek.includes(idx);
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => toggleDay(idx)}
+                    style={{
+                      padding:'6px 10px',
+                      borderRadius:8,
+                      border:'1px solid ' + (active ? '#2563eb' : '#cbd5e1'),
+                      background: active ? '#2563eb' : '#fff',
+                      color: active ? '#fff' : '#334155',
+                      fontSize:12,
+                      fontWeight:600
+                    }}
+                  >
+                    {lbl}
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+
+          <Field label="Time window (local time)">
+            <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
+              <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                <input type="time" value={form.startTime} onChange={e=>handleChange('startTime', e.target.value)} style={inputStyle} />
+                <button type="button" onClick={() => handleChange('startTime', nowHHMM())} style={miniBtn}>Now</button>
+              </div>
+              <span style={{ alignSelf:'center', color:'#64748b' }}>to</span>
+              <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                <input type="time" value={form.endTime} onChange={e=>handleChange('endTime', e.target.value)} style={inputStyle} />
+                <button type="button" onClick={() => handleChange('endTime', nowHHMM())} style={miniBtn}>Now</button>
+              </div>
               <button
-                key={idx}
                 type="button"
-                onClick={() => toggleDay(idx)}
-                style={{
-                  padding:'6px 10px',
-                  borderRadius:8,
-                  border:'1px solid ' + (active ? '#2563eb' : '#cbd5e1'),
-                  background: active ? '#2563eb' : '#fff',
-                  color: active ? '#fff' : '#334155',
-                  fontSize:12,
-                  fontWeight:600
-                }}
+                onClick={() => { handleChange('startTime', nowHHMM()); handleChange('endTime', '23:59'); }}
+                style={miniBtnAlt}
               >
-                {lbl}
+                Start now → 23:59
               </button>
-            );
-          })}
-        </div>
-      </Field>
+            </div>
+          </Field>
 
-      <Field label="Time window (local time)">
-        <div style={{ display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
-          <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-            <input type="time" value={form.startTime} onChange={e=>handleChange('startTime', e.target.value)} style={inputStyle} />
-            <button type="button" onClick={() => handleChange('startTime', nowHHMM())} style={miniBtn}>Now</button>
-          </div>
-          <span style={{ alignSelf:'center', color:'#64748b' }}>to</span>
-          <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-            <input type="time" value={form.endTime} onChange={e=>handleChange('endTime', e.target.value)} style={inputStyle} />
-            <button type="button" onClick={() => handleChange('endTime', nowHHMM())} style={miniBtn}>Now</button>
-          </div>
-          <button
-            type="button"
-            onClick={() => { handleChange('startTime', nowHHMM()); handleChange('endTime', '23:59'); }}
-            style={miniBtnAlt}
-          >
-            Start now → 23:59
-          </button>
-        </div>
-      </Field>
-
-      <Field label="Date range (optional)">
-        <div style={{ display:'flex', gap:10 }}>
-          <input type="date" value={form.startDate} onChange={e=>handleChange('startDate', e.target.value)} style={inputStyle} />
-          <span style={{ alignSelf:'center', color:'#64748b' }}>to</span>
-          <input type="date" value={form.endDate} onChange={e=>handleChange('endDate', e.target.value)} style={inputStyle} />
-        </div>
-      </Field>
+          <Field label="Date range (optional)">
+            <div style={{ display:'flex', gap:10 }}>
+              <input type="date" value={form.startDate} onChange={e=>handleChange('startDate', e.target.value)} style={inputStyle} />
+              <span style={{ alignSelf:'center', color:'#64748b' }}>to</span>
+              <input type="date" value={form.endDate} onChange={e=>handleChange('endDate', e.target.value)} style={inputStyle} />
+            </div>
+          </Field>
+        </>
+      )}
 
       <div style={previewBoxStyle}>
         <div style={previewLabelStyle}>Preview</div>

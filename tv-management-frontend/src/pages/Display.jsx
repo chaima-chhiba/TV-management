@@ -277,7 +277,9 @@ export default function Display() {
       ) : (
         <Wrapper layout={pages[pageIdx].layout}>
           {pages[pageIdx].slots.map((item, idx) => (
-            <Render key={(item?._id || item?.id || idx) + '_' + idx} item={item} layout={pages[pageIdx].layout} />
+            <div key={(item?._id || item?.id || idx) + '_' + idx} style={slotStyle}>
+              <Render item={item} layout={pages[pageIdx].layout} />
+            </div>
           ))}
         </Wrapper>
       )}
@@ -324,6 +326,25 @@ function arrowBtn(side) {
     cursor:'pointer', pointerEvents:'auto', display:'flex', alignItems:'center', justifyContent:'center'
   };
 }
+
+const slotStyle = {
+  position: 'relative',
+  background: '#000',
+  width: '100%',
+  height: '100%',
+  overflow: 'hidden',
+  minWidth: 0,
+  minHeight: 0
+};
+
+const mediaFit = {
+  position: 'absolute',
+  inset: 0,
+  width: '100%',
+  height: '100%',
+  objectFit: 'contain', // key to fit completely without cropping
+  background: '#000'
+};
 
 function isAllowedNow(content, schedules) {
   const id = String(content._id || content.id || '');
@@ -415,10 +436,16 @@ function decideLayout(count) {
   return 'split4';
 }
 
+// Use the configured API base (or same-origin when serving frontend from Express)
+const API_BASE = import.meta.env?.VITE_API_BASE_URL || window.location.origin;
+
 function getMediaSrc(item) {
   if (!item) return '';
   if (item.mediaDataUrl) return item.mediaDataUrl;
-  if (item.filePath) return `http://localhost:5000/${item.filePath}`;
+  if (item.filePath) {
+    const path = String(item.filePath).replace(/^\/+/, '');
+    return `${API_BASE}/${path}`;
+  }
   if (item.url) return item.url;
   const media = item.media;
   if (media?.contentType && media?.data) {
@@ -455,79 +482,92 @@ function useIsPortrait() {
 }
 
 function Render({ item, layout }) {
-  if (!item) return <div style={{ background:'#000' }} />;
+  if (!item) return null;
 
-  // scale text sizes depending on layout
-  const scale = layout === 'split4' ? 0.7 : layout === 'split2' ? 0.85 : 1;
-  const titleFs = `${2.6 * scale}vmin`;
-  const bodyFs = `${2.2 * scale}vmin`;
+  // Images
+  if (item.type === 'image') {
+    const src = getMediaSrc(item);
+    if (!src) return null;
+    return (
+      <img
+        src={src}
+        alt={item.title || 'image'}
+        style={mediaFit}
+        draggable={false}
+      />
+    );
+  }
 
+  // Videos
+  if (item.type === 'video') {
+    const src = getMediaSrc(item);
+    if (!src) return null;
+    return (
+      <video
+        src={src}
+        style={mediaFit}
+        autoPlay
+        loop
+        muted
+        playsInline
+        controls={false}
+      />
+    );
+  }
+
+  // Text content centered
   if (item.type === 'text') {
     return (
-      <div style={{
-        width:'100%', height:'100%', padding:16, boxSizing:'border-box',
-        background:'#0f172a', color:'#e2e8f0', borderRadius:0, overflow:'hidden'
-      }}>
-        <div style={{fontSize: titleFs, fontWeight:700, marginBottom:8}}>{item.title}</div>
-        <div style={{fontSize: bodyFs, lineHeight:1.4, whiteSpace:'pre-wrap'}}>{item.content}</div>
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 16,
+          color: '#fff',
+          textAlign: 'center',
+          background: 'transparent'
+        }}
+      >
+        <div style={{ fontSize: '4vmin', lineHeight: 1.25, wordBreak: 'break-word' }}>
+          {item.content || item.textContent}
+        </div>
       </div>
     );
   }
-  if (item.type === 'image') {
+
+  // Fallback: generic URL (iframe)
+  if (item.url) {
     return (
-      <img
-        src={getMediaSrc(item)}
-        alt={item.title}
-        style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:0, display:'block' }}
+      <iframe
+        src={item.url}
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, background: '#000' }}
       />
     );
   }
-  if (item.type === 'video') {
-    return (
-      <video
-        src={getMediaSrc(item)}
-        style={{ width:'100%', height:'100%', objectFit:'cover', borderRadius:0, display:'block' }}
-        autoPlay muted loop playsInline webkit-playsinline="true"
-      />
-    );
-  }
-  return <div />;
+
+  return null;
 }
 
 function Wrapper({ layout, children }) {
-  const isPortrait = useIsPortrait();
-
-  // Fill parent exactly, no gaps/padding
   const base = {
-    display:'grid',
-    width:'100%',
-    height:'100%',
-    boxSizing:'border-box',
-    gap: 0
+    position: 'absolute',
+    inset: 0,
+    display: 'grid',
+    gap: 8,
+    padding: 8,
+    background: '#000'
   };
+  const style =
+    layout === 'fullscreen'
+      ? { ...base, gridTemplateColumns: '1fr', gridTemplateRows: '1fr' }
+      : layout === 'split2'
+      ? { ...base, gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr' }
+      : { ...base, gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr' }; // split4/default
 
-  if (layout === 'split4') {
-    return (
-      <div style={{ ...base, gridTemplateColumns:'1fr 1fr', gridTemplateRows:'1fr 1fr' }}>
-        {children}
-      </div>
-    );
-  }
-
-  if (layout === 'split2') {
-    const landscape = { ...base, gridTemplateColumns:'1fr 1fr', gridTemplateRows:'1fr' };
-    const portrait  = { ...base, gridTemplateColumns:'1fr', gridTemplateRows:'1fr 1fr' };
-    return <div style={isPortrait ? portrait : landscape}>{children.slice(0, 2)}</div>;
-  }
-
-  // fullscreen
-  return (
-    <div style={{ width:'100%', height:'100%', boxSizing:'border-box' }}>
-      <div style={{ width:'100%', height:'100%' }}>
-        {children[0] || null}
-      </div>
-    </div>
-  );
+  return <div style={style}>{children}</div>;
 }
 
 function Status({ text }) {
