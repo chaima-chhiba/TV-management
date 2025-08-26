@@ -74,13 +74,21 @@ export default function Schedule() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    // Show content that is global (no tv) or targeted to the selected TV
+    // Show content that is global (no tv/tvs) or targeted to the selected TV
     const scoped = allContent.filter(c => {
       if (!selectedTv) return false;
-      if (!c.tv) return true;
+
+      // NEW: multi-TV assignment
+      if (Array.isArray(c.tvs) && c.tvs.length > 0) {
+        return c.tvs.some(t => String(t?._id || t) === String(selectedTv));
+      }
+
+      // Legacy: single tv or global
+      if (!c.tv) return true; // treat as global if neither tv nor tvs
       const cid = c.tv._id || c.tv;
       return String(cid) === String(selectedTv);
     });
+
     if (!q) return scoped;
     return scoped.filter(c => {
       const s = [

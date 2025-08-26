@@ -15,6 +15,10 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
 
   // NEW: detect edit mode
   const isEditing = !!(initial && (initial._id || initial.id));
+  const [tvQuery, setTvQuery] = useState('');
+  // ADD: dropdown open/close + outside click
+  const [tvDropdownOpen, setTvDropdownOpen] = useState(false);
+  const tvDropdownRef = React.useRef(null);
 
   const [form, setForm] = useState(() => ({
     title: initial?.title || '',
@@ -24,6 +28,10 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
     textContent: initial?.content || '',
     layout: initial?.layout || 'auto',
     tv: initial?.tv?._id || initial?.tv || '',
+    // CHANGED: preselect current TV in edit, empty in create
+    tvsSelected: (initial?.tvs && initial.tvs.length)
+      ? initial.tvs.map(t => String(t?._id || t))
+      : (initial?.tv ? [String(initial.tv?._id || initial.tv)] : []),
     fileBase64: initial?.mediaDataUrl ? initial.mediaDataUrl.split(',')[1] : '',
     fileMime: initial?.mediaDataUrl ? initial.mediaDataUrl.match(/^data:(.*?);/)[1] : '',
     // schedule state kept for create; hidden during edit
@@ -38,6 +46,50 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
   useEffect(() => {
     tvService.getTVs().then(setTvs).catch(console.error);
   }, []);
+
+  // CLOSE on outside click
+  useEffect(() => {
+    const onDoc = (e) => {
+      if (!tvDropdownOpen) return;
+      if (tvDropdownRef.current && !tvDropdownRef.current.contains(e.target)) {
+        setTvDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [tvDropdownOpen]);
+
+  const filteredTVs = React.useMemo(() => {
+    const q = tvQuery.trim().toLowerCase();
+    if (!q) return tvs;
+    return tvs.filter(tv => {
+      const name = (tv.name || '').toLowerCase();
+      const dept = (tv.department || '').toLowerCase();
+      const id = String(tv._id || tv.id || '').toLowerCase();
+      return name.includes(q) || dept.includes(q) || id.includes(q);
+    });
+  }, [tvs, tvQuery]);
+
+  const toggleTVSelection = (id) => {
+    const key = String(id);
+    setForm(prev => {
+      const set = new Set(prev.tvsSelected.map(String));
+      set.has(key) ? set.delete(key) : set.add(key);
+      return { ...prev, tvsSelected: Array.from(set) };
+    });
+  };
+
+  const selectAllFiltered = () => {
+    setForm(prev => {
+      const set = new Set(prev.tvsSelected.map(String));
+      filteredTVs.forEach(tv => set.add(String(tv._id || tv.id)));
+      return { ...prev, tvsSelected: Array.from(set) };
+    });
+  };
+
+  const clearAllSelected = () => {
+    setForm(prev => ({ ...prev, tvsSelected: [] }));
+  };
 
   const handleChange = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -98,25 +150,36 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
     setMediaList(prev => prev.filter((_, i) => i !== idx));
   };
 
-  // UPDATED: submit always requires TV; schedule only on create
+  // UPDATED: submit (multi-TV on edit too; edit updates using the first selected TV)
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const tvsPayload = form.tvsSelected.map(String);
+    if (tvsPayload.length === 0) {
+      alert('Select at least one target TV.');
+      return;
+    }
+    const commonBase = {
+      description: form.description?.trim(),
+      type: form.type,
+      // FORCE: no layout choice for text
+      layout: form.type === 'text' ? 'auto' : (form.layout || 'auto'),
+      content: form.type === 'text' ? form.textContent?.trim() : undefined
+    };
 
-    if (!form.tv) {
-      alert('Select a target TV.');
+    if (isEditing) {
+      const payload = {
+        ...commonBase,
+        tvs: tvsPayload,
+        title: form.title?.trim(),
+        url: form.type !== 'text' && !form.fileBase64 ? (form.url?.trim() || undefined) : undefined,
+        fileBase64: form.fileBase64 || undefined,
+        fileMime: form.fileBase64 ? form.fileMime : undefined
+      };
+      await onSubmit(payload);
       return;
     }
 
-    // Validate media when type is image/video
-    if (form.type !== 'text') {
-      const hasMedia = mediaList.length > 0 || !!form.fileBase64 || !!form.url;
-      if (!hasMedia) {
-        setErrors(prev => ({ ...prev, media: `Please add at least one ${form.type}.` }));
-        return;
-      }
-    }
-
-    const scheduleData = {
+    const schedule = {
       enabled: true,
       daysOfWeek: form.daysOfWeek,
       startTime: form.startTime,
@@ -125,47 +188,26 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
       endDate: form.endDate || undefined
     };
 
-    const common = {
-      description: form.description.trim(),
-      type: form.type,
-      layout: form.layout || 'auto',
-      tv: form.tv || null,
-      content: form.type === 'text' ? form.textContent.trim() : undefined,
-      // include schedule only when creating
-      ...(isEditing ? {} : { schedule: scheduleData })
-    };
-
-    // Single text OR no multi-media selected -> single payload
-    if (form.type === 'text' || mediaList.length === 0) {
-      const payload = {
-        ...common,
-        title: form.title.trim(),
-        url: form.type !== 'text' && !form.fileBase64 ? (form.url ? form.url.trim() : undefined) : undefined,
-        fileBase64: form.fileBase64 || undefined,
-        fileMime: form.fileBase64 ? form.fileMime : undefined
-      };
-      await onSubmit(payload);
-      return;
-    }
-
-    // Multi-create: one payload per media item (create only scenario)
-    const baseTitle = form.title.trim();
-    for (let i = 0; i < mediaList.length; i++) {
-      const m = mediaList[i];
-      const title =
-        baseTitle
-          ? (mediaList.length > 1 ? `${baseTitle} ${i + 1}` : baseTitle)
+    if (mediaList.length > 0) {
+      for (let i = 0; i < mediaList.length; i++) {
+        const m = mediaList[i];
+        const title = form.title?.trim()
+          ? (mediaList.length > 1 ? `${form.title.trim()} ${i + 1}` : form.title.trim())
           : (m.name || `${form.type} ${i + 1}`);
-
-      const payload = {
-        ...common,
-        title,
-        url: m.url || undefined,
-        fileBase64: m.fileBase64 || undefined,
-        fileMime: m.fileMime || undefined
-      };
-      // eslint-disable-next-line no-await-in-loop
-      await onSubmit(payload);
+        // eslint-disable-next-line no-await-in-loop
+        await onSubmit({
+          ...commonBase, tvs: tvsPayload, title,
+          url: m.url || undefined, fileBase64: m.fileBase64 || undefined, fileMime: m.fileMime || undefined,
+          schedule
+        });
+      }
+    } else {
+      await onSubmit({
+        ...commonBase, tvs: tvsPayload, title: form.title?.trim(),
+        url: form.type !== 'text' && !form.fileBase64 ? (form.url?.trim() || undefined) : undefined,
+        fileBase64: form.fileBase64 || undefined, fileMime: form.fileBase64 ? form.fileMime : undefined,
+        schedule
+      });
     }
   };
 
@@ -221,36 +263,97 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
           </div>
         </Field>
 
-        <Field label="Layout">
-          <select
-            value={form.layout}
-            onChange={e => setForm(p => ({ ...p, layout: e.target.value }))}
-            style={inputStyle}
-          >
-            <option value="auto">Auto (Display decides)</option>
-            <option value="fullscreen">Full Screen</option>
-            <option value="split2">2 Split</option>
-            <option value="split4">4 Split</option>
-          </select>
-          <div style={{ fontSize:12, color:'#64748b', marginTop:6 }}>
-            Leave as Auto to let the Display choose layout dynamically.
-          </div>
-        </Field>
+        {/* HIDE layout when type is text */}
+        {form.type !== 'text' && (
+          <Field label="Layout">
+            <select
+              value={form.layout}
+              onChange={e => setForm(p => ({ ...p, layout: e.target.value }))}
+              style={inputStyle}
+            >
+              <option value="auto">Auto</option>
+              <option value="fullscreen">Full Screen</option>
+              <option value="split2">2 Split</option>
+              <option value="split4">4 Split</option>
+            </select>
+          </Field>
+        )}
 
-        <Field label="Target TV">
-          <select
-            value={form.tv}
-            onChange={e => handleChange('tv', e.target.value)}
-            style={inputStyle}
-            required
-          >
-            <option value="" disabled>Select TV</option>
-            {tvs.map(tv => (
-              <option key={tv._id || tv.id} value={tv._id || tv.id}>
-                {tv.name || tv.tvId || 'TV'}
-              </option>
-            ))}
-          </select>
+        {/* Target TV(s): use the dropdown for both create and edit */}
+        <Field label="Target TV(s)">
+          <div ref={tvDropdownRef} style={{ position:'relative' }}>
+            <button
+              type="button"
+              onClick={() => setTvDropdownOpen(o => !o)}
+              style={{ ...inputStyle, width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer' }}
+              aria-haspopup="listbox"
+              aria-expanded={tvDropdownOpen}
+            >
+              <span style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                {form.tvsSelected.length === 0 ? 'Select TVs' : `${form.tvsSelected.length} selected`}
+              </span>
+              <span style={{ marginLeft:8, opacity:.7 }}>▾</span>
+            </button>
+
+            {tvDropdownOpen && (
+              <div style={ddMenu}>
+                <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
+                  <input
+                    value={tvQuery}
+                    onChange={e => setTvQuery(e.target.value)}
+                    style={{ ...inputStyle, flex:1 }}
+                    placeholder="Search TVs by name, department or id..."
+                  />
+                </div>
+                <div style={ddActions}>
+                  <button type="button" onClick={selectAllFiltered} style={miniBtnAlt}>Select all</button>
+                  <button type="button" onClick={clearAllSelected} style={miniBtn}>Clear</button>
+                </div>
+
+                <div style={ddScroll}>
+                  {filteredTVs.map(tv => {
+                    const id = tv._id || tv.id;
+                    const selected = form.tvsSelected.map(String).includes(String(id));
+                    return (
+                      <label key={id} style={ddItem} role="option" aria-selected={selected}>
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => toggleTVSelection(id)}
+                          style={{ marginRight:10 }}
+                        />
+                        <span style={{
+                          width:8, height:8, borderRadius:'50%',
+                          background: tv.status === 'online' ? '#16a34a' : '#dc2626',
+                          marginRight:8, flex:'0 0 auto'
+                        }}/>
+                        <div style={{ overflow:'hidden' }}>
+                          <div style={{ fontWeight:600, color:'#0f172a', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                            {tv.name || tv.tvId || 'TV'}
+                          </div>
+                          {tv.department && (
+                            <div style={{ fontSize:12, color:'#64748b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                              {tv.department}
+                            </div>
+                          )}
+                        </div>
+                      </label>
+                    );
+                  })}
+                  {filteredTVs.length === 0 && (
+                    <div style={{ fontSize:12, color:'#64748b', padding:'8px 2px' }}>No TVs match your search.</div>
+                  )}
+                </div>
+
+                <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:10 }}>
+                  <button type="button" onClick={() => setTvDropdownOpen(false)} style={miniBtn}>Done</button>
+                </div>
+              </div>
+            )}
+          </div>
+          <div style={{ fontSize:12, color:'#475569', marginTop:6 }}>
+            Selected: <b>{form.tvsSelected.length}</b>
+          </div>
         </Field>
       </div>
 
@@ -618,4 +721,90 @@ const nowHHMM = () => {
   const hh = String(d.getHours()).padStart(2,'0');
   const mm = String(d.getMinutes()).padStart(2,'0');
   return `${hh}:${mm}`;
+};
+
+const tvGrid = {
+  display:'grid',
+  gap:8,
+  gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))'
+};
+
+const tvChipBase = {
+  display:'flex',
+  alignItems:'center',
+  gap:8,
+  padding:'10px 12px',
+  borderRadius:10,
+  border:'1px solid #cbd5e1',
+  background:'#fff',
+  color:'#0f172a',
+  cursor:'pointer',
+  textAlign:'left',
+  minWidth:0
+};
+
+const tvChipSelected = {
+  border:'1px solid #2563eb',
+  background:'#eff6ff',
+  boxShadow:'inset 0 0 0 1px #2563eb'
+};
+
+const tvBadge = {
+  display:'inline-flex',
+  alignItems:'center',
+  gap:6,
+  padding:'4px 8px',
+  borderRadius:999,
+  background:'#eef2ff',
+  border:'1px solid #c7d2fe',
+  color:'#3730a3',
+  fontSize:12,
+  fontWeight:700
+};
+
+const tvBadgeX = {
+  marginLeft:2,
+  border:'none',
+  background:'transparent',
+  color:'#3730a3',
+  cursor:'pointer',
+  fontSize:14,
+  lineHeight:1
+};
+
+const ddMenu = {
+  position:'absolute',
+  top:'calc(100% + 6px)',
+  left:0,
+  right:0,
+  zIndex:50,
+  background:'#fff',
+  border:'1px solid #e2e8f0',
+  borderRadius:12,
+  boxShadow:'0 12px 28px rgba(0,0,0,.12)',
+  padding:10
+};
+
+const ddActions = {
+  display:'flex',
+  gap:8,
+  justifyContent:'flex-start',
+  marginBottom:8
+};
+
+const ddScroll = {
+  maxHeight: 280,
+  overflowY:'auto',
+  border:'1px solid #e2e8f0',
+  borderRadius:10,
+  padding:6
+};
+
+const ddItem = {
+  display:'flex',
+  alignItems:'center',
+  gap:8,
+  padding:'8px 6px',
+  borderRadius:8,
+  cursor:'pointer'
 };

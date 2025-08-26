@@ -8,6 +8,7 @@ import ContentLibrary from './pages/ContentLibrary';
 import Display from './pages/Display'; 
 import Schedule from './pages/Schedule'; 
 import ToastProvider from './components/ToastProvider';
+import { getToken } from './services/authService'; // ADD
 
 function Layout() {
   return (
@@ -20,24 +21,33 @@ function Layout() {
   );
 }
 
+// ADD: auth guard
+function RequireAuth() {
+  const token = getToken();
+  if (!token) return <Navigate to="/login" replace />;
+  return <Outlet />;
+}
+
 export default function App() {
   return (
     <ToastProvider>
       <BrowserRouter>
         <Routes>
-          {/* Login without layout */}
+          {/* Public: login */}
           <Route path="/login" element={<Login />} />
 
-          {/* Public display without Topbar */}
-          <Route path="/display/:tvId" element={<Display />} /> {/* ADD */}
+          {/* Public: display */}
+          <Route path="/display/:tvId" element={<Display />} />
 
-          {/* App routes with Topbar */}
-          <Route element={<Layout />}>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/tvs" element={<TVs />} />
-            <Route path="/content" element={<ContentLibrary />} />
-            <Route path="/schedule" element={<Schedule />} />
+          {/* Protected app routes (wrap with auth guard, then layout) */}
+          <Route element={<RequireAuth />}>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/tvs" element={<TVs />} />
+              <Route path="/content" element={<ContentLibrary />} />
+              <Route path="/schedule" element={<Schedule />} />
+            </Route>
           </Route>
 
           {/* Fallback */}

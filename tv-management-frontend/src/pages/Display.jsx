@@ -21,6 +21,7 @@ export default function Display() {
   const [now, setNow] = React.useState(new Date());
   const [weather, setWeather] = React.useState(null);
   const [message, setMessage] = React.useState(''); // ADD
+  const [bandText, setBandText] = React.useState(''); // NEW: global top band text
 
   // swipe state
   const startX = React.useRef(null);
@@ -65,7 +66,10 @@ export default function Display() {
         if (!mounted) return;
 
         const sourceContent = allContent.filter(c => {
-          if (!c.tv) return true; // global
+          if (Array.isArray(c.tvs) && c.tvs.length) {
+            return c.tvs.some(t => String(t?._id || t) === String(resolvedId));
+          }
+          if (!c.tv) return true;
           const cid = c.tv._id || c.tv;
           return String(cid) === String(resolvedId);
         });
@@ -76,13 +80,24 @@ export default function Display() {
         }));
 
         const allowed = baseItems.filter(c => isAllowedNow(c, tvSchedules));
-        const built = buildDynamicPages(allowed);
+
+        // Build the top band text from all allowed text items
+        const texts = allowed
+          .filter(c => c.type === 'text')
+          .map(it => (it.content || it.textContent || it.title || '').trim())
+          .filter(Boolean);
+        const uniq = Array.from(new Set(texts));
+        setBandText(uniq.join(' • '));
+
+        // Build visual pages without text items (text is shown as overlay)
+        const built = buildDynamicPages(allowed.filter(c => c.type !== 'text'));
         setPages(built);
         setPageIdx(0);
       } catch (e) {
         console.error('Display load failed:', e);
         setError(e.message || 'Failed to load');
         setPages([]);
+        setBandText('');
       } finally {
         setLoading(false);
       }
@@ -220,6 +235,23 @@ export default function Display() {
     return () => clearInterval(t);
   }, []);
 
+  // ADD: inject keyframes once for the ticker animation
+  React.useEffect(() => {
+    if (document.getElementById('display-ticker-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'display-ticker-styles';
+    style.textContent = `
+      @keyframes ticker-scroll {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-50%); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .ticker-anim { animation: none !important; }
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
+
   if (loading) return <Status text="Loading..." />;
   if (error) return <Status text={error} />;
   if (resolveErr) return <Status text={resolveErr} />;
@@ -243,6 +275,7 @@ export default function Display() {
       onTouchMove={onPointerMove}
       onTouchEnd={onPointerUp}
     >
+     
       {/* Arrows only when there are pages */}
       {!useFallback && (
         <div style={{ position:'fixed', inset:0, zIndex:25, pointerEvents:'none' }}>
@@ -282,6 +315,13 @@ export default function Display() {
             </div>
           ))}
         </Wrapper>
+      )}
+
+      {/* Bottom text band overlay (always above content and HUD) */}
+      {bandText && (
+        <div style={{ position:'fixed', bottom:0, left:0, right:0, zIndex:50, pointerEvents:'none' }}>
+          <TickerBand text={bandText} position="bottom" />
+        </div>
       )}
     </div>
   );
@@ -515,28 +555,8 @@ function Render({ item, layout }) {
     );
   }
 
-  // Text content centered
-  if (item.type === 'text') {
-    return (
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 16,
-          color: '#fff',
-          textAlign: 'center',
-          background: 'transparent'
-        }}
-      >
-        <div style={{ fontSize: '4vmin', lineHeight: 1.25, wordBreak: 'break-word' }}>
-          {item.content || item.textContent}
-        </div>
-      </div>
-    );
-  }
+  // Text is rendered globally in the top band
+  if (item.type === 'text') return null;
 
   // Fallback: generic URL (iframe)
   if (item.url) {
@@ -549,6 +569,62 @@ function Render({ item, layout }) {
   }
 
   return null;
+}
+
+// ADD: Ticker band component (dark, minimal)
+function TickerBand({ text, position = 'top' }) {
+  const clean = text.replace(/\s*\n+\s*/g, ' • ').replace(/\s{2,}/g, ' ').trim();
+  const estChars = Math.max(20, clean.length);
+  const duration = Math.min(40, Math.max(14, Math.round(estChars / 3))); // 14–40s
+
+  const band = {
+    position: 'relative', // container is fixed by caller
+    height: '14vh',
+    minHeight: 48,
+    background: 'rgba(0,0,0,0.75)',
+    borderBottom: position === 'top' ? '1px solid rgba(255,255,255,0.12)' : undefined,
+    borderTop: position !== 'top' ? '1px solid rgba(255,255,255,0.12)' : undefined,
+    display: 'flex',
+    alignItems: 'center',
+    overflow: 'hidden',
+    padding: '0 12px',
+    pointerEvents: 'none'
+  };
+
+  const mask = { position: 'relative', width: '100%', height: '100%', overflow: 'hidden' };
+
+  const track = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    whiteSpace: 'nowrap',
+    willChange: 'transform',
+    animation: `ticker-scroll ${duration}s linear infinite`
+  };
+
+  const chunk = { display: 'inline-flex', alignItems: 'center', gap: 24, paddingRight: 48 };
+
+  const txt = { color: '#fff', fontSize: '3vmin', lineHeight: 1.2, fontWeight: 700, textShadow: '0 1px 2px rgba(0,0,0,.6)' };
+  const dot = { width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,0.6)' };
+
+  // Duplicate content for seamless loop (translateX -50%)
+  return (
+    <div style={band}>
+      <div style={mask}>
+        <div className="ticker-anim" style={track}>
+          <div style={chunk}>
+            <span style={txt}>{clean}</span>
+            <span style={dot} />
+            <span style={txt}>{clean}</span>
+          </div>
+          <div style={chunk}>
+            <span style={txt}>{clean}</span>
+            <span style={dot} />
+            <span style={txt}>{clean}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function Wrapper({ layout, children }) {
