@@ -291,10 +291,11 @@ const pagerActive = {
   borderColor:'#2563eb'
 };
 
-// Helper reused for preview
+// Helper reused for preview (same base as Display)
 function getMediaSrc(item) {
+  const API_BASE = (import.meta.env?.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
   if (item?.mediaDataUrl) return item.mediaDataUrl;
-  if (item?.filePath) return `http://localhost:5000/${item.filePath}`;
+  if (item?.filePath) return `${API_BASE}/${String(item.filePath).replace(/^\/+/, '')}`;
   if (item?.url) return item.url;
   if (item?.media?.data && item?.media?.contentType) {
     const mime = item.media.contentType;
@@ -316,7 +317,19 @@ function getMediaSrc(item) {
 
 // Preview Modal
 function PreviewModal({ item, onClose }) {
-  const src = getMediaSrc(item);
+  const [idx, setIdx] = React.useState(0);
+
+  const assets = Array.isArray(item.assets) ? item.assets.filter(a => a.type !== 'text') : [];
+  const hasAssets = assets.length > 0;
+
+  // pick first visual source
+  const cur = hasAssets ? assets[idx] : item;
+  const src = hasAssets ? getMediaSrc(cur) : getMediaSrc(item);
+  const type = hasAssets ? cur.type : item.type;
+
+  const next = () => setIdx(i => (i + 1) % Math.max(assets.length, 1));
+  const prev = () => setIdx(i => (i - 1 + Math.max(assets.length, 1)) % Math.max(assets.length, 1));
+
   return (
     <div style={{
       position:'fixed', inset:0, background:'rgba(0,0,0,0.6)',
@@ -327,30 +340,41 @@ function PreviewModal({ item, onClose }) {
       <div
         style={{
           background:'#fff', borderRadius:12, padding:16, width:'min(900px, 92vw)',
-          maxHeight:'90vh', overflow:'auto', boxShadow:'0 10px 30px rgba(0,0,0,0.2)'
+          maxHeight:'90vh', overflow:'auto', boxShadow:'0 10px 30px rgba(0,0,0,0.2)', position:'relative'
         }}
         onClick={(e)=>e.stopPropagation()}
       >
         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12}}>
-          <div style={{fontSize:18, fontWeight:700, color:'#1e293b'}}>{item.title}</div>
+          <div style={{fontSize:18, fontWeight:700, color:'#1e293b'}}>
+            {item.title}{hasAssets ? ` • ${idx+1}/${assets.length}` : ''}
+          </div>
           <button onClick={onClose} style={{
             border:'none', background:'#f1f5f9', color:'#334155', borderRadius:8, padding:'6px 10px', cursor:'pointer', fontWeight:600
           }}>Close</button>
         </div>
         <div style={{fontSize:12, color:'#64748b', marginBottom:12}}>
-          {item.type?.toUpperCase()} • {item.layout || '-'}
+          {(type || item.type)?.toUpperCase()} • {item.layout || '-'}
         </div>
-        {item.type === 'text' && (
+
+        {type === 'text' && (
           <div style={{whiteSpace:'pre-wrap', fontSize:16, lineHeight:1.5, color:'#111827'}}>
             {item.content || '—'}
           </div>
         )}
-        {item.type === 'image' && src && (
+        {type === 'image' && src && (
           <img src={src} alt={item.title} style={{maxWidth:'100%', borderRadius:10}} />
         )}
-        {item.type === 'video' && src && (
+        {type === 'video' && src && (
           <video src={src} style={{width:'100%', borderRadius:10}} controls autoPlay />
         )}
+
+        {hasAssets && assets.length > 1 && (
+          <div style={{ display:'flex', justifyContent:'space-between', marginTop:12 }}>
+            <button onClick={prev} style={pagerBtn(false)}>‹ Prev</button>
+            <button onClick={next} style={pagerBtn(false)}>Next ›</button>
+          </div>
+        )}
+
         {item.description && (
           <div style={{marginTop:12, fontSize:14, color:'#334155'}}>{item.description}</div>
         )}

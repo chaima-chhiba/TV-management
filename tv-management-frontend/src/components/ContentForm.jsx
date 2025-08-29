@@ -8,9 +8,14 @@ const typeOptions = [
   { value: 'video', label: 'Video', icon: Video }
 ];
 
+// local unique id for new assets (for React keys)
+const makeTempId = () =>
+  `tmp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
 export default function ContentForm({ initial, onSubmit, onCancel, submitting }) {
   const [tvs, setTvs] = useState([]);
-  const [mediaList, setMediaList] = useState([]); // [{ name, preview, fileBase64, fileMime, url }]
+  const [mediaList, setMediaList] = useState([]);       // [{ _id?, name, preview, fileBase64, fileMime, url, filePath, type }]
+  const [removedAssetIds, setRemovedAssetIds] = useState([]); // track deletions
   const [errors, setErrors] = useState({}); // ADD: validation errors
 
   // NEW: detect edit mode
@@ -103,82 +108,152 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
     });
   };
 
-  // NEW: handle multiple file selection
+  // Build a preview URL for an asset/item from server fields
+  const API_BASE = (import.meta.env?.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
+  function getAssetPreview(a) {
+    if (!a) return '';
+    if (a.mediaDataUrl) return a.mediaDataUrl;
+    if (a.filePath) return `${API_BASE}/${String(a.filePath).replace(/^\/+/, '')}`;
+    if (a.url) return a.url;
+    if (a.media?.contentType && a.media?.data) {
+      const mime = a.media.contentType;
+      const data = a.media.data;
+      if (typeof data === 'string') return `data:${mime};base64,${data}`;
+      const arr = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : null);
+      if (arr) {
+        const bytes = new Uint8Array(arr);
+        let binary = ''; const chunk = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunk) {
+          binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+        }
+        return `data:${mime};base64,${btoa(binary)}`;
+      }
+    }
+    return '';
+  };
+
+  // Preload existing assets on edit (keep _id so we can target deletions)
+  React.useEffect(() => {
+    if (!isEditing) return;
+    const list = [];
+    if (Array.isArray(initial?.assets) && initial.assets.length) {
+      for (const a of initial.assets) {
+        list.push({
+          _id: a._id, // server id
+          __tempId: a._id ? undefined : makeTempId(),
+          name: a.title || (a.url ? a.url.split('/').pop() : (a.type || '').toUpperCase()),
+          preview: getAssetPreview(a),
+          fileBase64: '', fileMime: '',
+          url: a.url || '',
+          filePath: a.filePath || '',
+          type: a.type || initial.type || 'image'
+        });
+      }
+    } else {
+      const preview = getAssetPreview(initial);
+      if (preview) {
+        list.push({
+          _id: undefined,
+          __tempId: makeTempId(),
+          name: initial.title || 'Media',
+          preview,
+          fileBase64: '', fileMime: '',
+          url: initial.url || '',
+          filePath: initial.filePath || '',
+          type: initial.type || 'image'
+        });
+      }
+    }
+    setMediaList(list);
+    setRemovedAssetIds([]); // reset removals when initial changes
+  }, [isEditing, initial]);
+
+  // Stable key for list items (_id from DB or __tempId for new)
+  const itemKey = (m) => String(m?._id || m?.__tempId);
+
+  // Remove by key (not index)
+  const removeMediaByKey = (key) => {
+    setMediaList(prev => {
+      const it = prev.find(x => itemKey(x) === String(key));
+      if (it?._id) {
+        setRemovedAssetIds(ids => [...ids, String(it._id)]);
+      }
+      return prev.filter(x => itemKey(x) !== String(key));
+    });
+  };
+
+  // Add selected files (keep per-item type)
   const handleFiles = (files) => {
     if (!files || files.length === 0) return;
-    const arr = Array.from(files);
-    arr.forEach(file => {
+    Array.from(files).forEach(file => {
       const reader = new FileReader();
       reader.onloadend = () => {
         const result = reader.result;
         const base64 = result.split(',')[1];
         const mime = result.match(/^data:(.*?);/)[1];
-        setMediaList(prev => [
+        const t = mime.startsWith('video/') ? 'video' : (mime.startsWith('image/') ? 'image' : 'image');
+        setMediaList(prev => ([
           ...prev,
-          { name: file.name, preview: result, fileBase64: base64, fileMime: mime, url: '' }
-        ]);
-        setForm(p => ({ ...p, fileBase64: '', fileMime: '', url: '' }));
-        setErrors(prev => ({ ...prev, media: undefined })); // clear media error
+          { _id: undefined, __tempId: makeTempId(), name: file.name, preview: result, fileBase64: base64, fileMime: mime, url: '', filePath: '', type: t }
+        ]));
       };
       reader.readAsDataURL(file);
     });
   };
 
-  // Keep single-file setter for backward compatibility, but prefer multi
-  const handleFile = (file) => {
-    if (!file) {
-      setForm(p => ({ ...p, fileBase64: '', fileMime: '', url: '' }));
-      return;
-    }
-    // if user picks a single file via the main input, route to multi list too
-    handleFiles([file]);
-  };
-
-  // NEW: add URL as another media item
+  // Add current URL input as an asset
   const addUrlItem = () => {
     const u = (form.url || '').trim();
     if (!u) return;
-    setMediaList(prev => [
+    setMediaList(prev => ([
       ...prev,
-      { name: u.split('/').pop() || 'URL', preview: u, fileBase64: '', fileMime: '', url: u }
-    ]);
-    setForm(p => ({ ...p, url: '', fileBase64: '', fileMime: '' }));
-    setErrors(prev => ({ ...prev, media: undefined })); // clear media error
+      { _id: undefined, __tempId: makeTempId(), name: u.split('/').pop() || u, preview: '', fileBase64: '', fileMime: '', url: u, filePath: '', type: form.type }
+    ]));
+    setForm(p => ({ ...p, url: '' }));
   };
 
-  const removeMediaAt = (idx) => {
-    setMediaList(prev => prev.filter((_, i) => i !== idx));
-  };
-
-  // UPDATED: submit (multi-TV on edit too; edit updates using the first selected TV)
+  // UPDATED: submit as one content with assets[]
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const tvsPayload = form.tvsSelected.map(String);
+    const tvsPayload = (form.tvsSelected || []).map(String);
     if (tvsPayload.length === 0) {
       alert('Select at least one target TV.');
       return;
     }
-    const commonBase = {
+
+    // Build only NEW assets to add (items without _id)
+    const addAssets = form.type === 'text' ? [] : mediaList
+      .filter(m => !m._id) // only new items
+      .map(m => {
+        const t = m.type || (m.fileMime?.startsWith('video/') ? 'video' : (m.fileMime?.startsWith('image/') ? 'image' : form.type));
+        const a = { type: t, title: m.name || '', duration: 8 };
+        if (m.fileBase64 && m.fileMime) { a.fileBase64 = m.fileBase64; a.fileMime = m.fileMime; }
+        else if (m.url) { a.url = m.url; }
+        else if (m.filePath) { a.filePath = m.filePath; }
+        return a;
+      });
+
+    const payloadBase = {
       description: form.description?.trim(),
       type: form.type,
-      // FORCE: no layout choice for text
       layout: form.type === 'text' ? 'auto' : (form.layout || 'auto'),
-      content: form.type === 'text' ? form.textContent?.trim() : undefined
+      content: form.type === 'text' ? form.textContent?.trim() : undefined,
+      title: form.title?.trim(),
+      tvs: tvsPayload
     };
 
     if (isEditing) {
-      const payload = {
-        ...commonBase,
-        tvs: tvsPayload,
-        title: form.title?.trim(),
-        url: form.type !== 'text' && !form.fileBase64 ? (form.url?.trim() || undefined) : undefined,
-        fileBase64: form.fileBase64 || undefined,
-        fileMime: form.fileBase64 ? form.fileMime : undefined
-      };
+      const patch = {};
+      if (removedAssetIds.length) patch.removeIds = removedAssetIds;
+      if (addAssets.length) patch.add = addAssets;
+
+      const payload = { ...payloadBase };
+      if (Object.keys(patch).length) payload.assetsPatch = patch; // send patch only
       await onSubmit(payload);
       return;
     }
 
+    // create
     const schedule = {
       enabled: true,
       daysOfWeek: form.daysOfWeek,
@@ -188,27 +263,11 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
       endDate: form.endDate || undefined
     };
 
-    if (mediaList.length > 0) {
-      for (let i = 0; i < mediaList.length; i++) {
-        const m = mediaList[i];
-        const title = form.title?.trim()
-          ? (mediaList.length > 1 ? `${form.title.trim()} ${i + 1}` : form.title.trim())
-          : (m.name || `${form.type} ${i + 1}`);
-        // eslint-disable-next-line no-await-in-loop
-        await onSubmit({
-          ...commonBase, tvs: tvsPayload, title,
-          url: m.url || undefined, fileBase64: m.fileBase64 || undefined, fileMime: m.fileMime || undefined,
-          schedule
-        });
-      }
-    } else {
-      await onSubmit({
-        ...commonBase, tvs: tvsPayload, title: form.title?.trim(),
-        url: form.type !== 'text' && !form.fileBase64 ? (form.url?.trim() || undefined) : undefined,
-        fileBase64: form.fileBase64 || undefined, fileMime: form.fileBase64 ? form.fileMime : undefined,
-        schedule
-      });
-    }
+    await onSubmit({
+      ...payloadBase,
+      assets: addAssets, // all items are "new" on create
+      schedule
+    });
   };
 
   return (
@@ -383,7 +442,7 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
           {/* NEW: multiple file input */}
           <input
             type="file"
-            accept={form.type === 'image' ? 'image/*' : 'video/*'}
+            accept={form.type === 'video' ? 'video/*' : 'image/*'}
             multiple
             onChange={e => handleFiles(e.target.files)}
             style={{ marginBottom: 8 }}
@@ -402,25 +461,44 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
           {/* NEW: show selected items list */}
           {mediaList.length > 0 && (
             <div style={{ display:'grid', gap:8, gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))' }}>
-              {mediaList.map((m, idx) => (
-                <div key={idx} style={{ border:'1px solid #e2e8f0', borderRadius:10, padding:8, background:'#fff' }}>
-                  <div style={{ fontSize:12, fontWeight:700, color:'#334155', marginBottom:6, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                    {m.name}
+              {mediaList.map((m) => {
+                const key = itemKey(m);
+                const itemType =
+                  m.type ||
+                  (m.fileMime?.startsWith?.('video/') ? 'video' :
+                   m.fileMime?.startsWith?.('image/') ? 'image' : form.type);
+                const src = m.preview || getAssetPreview({ filePath: m.filePath, url: m.url });
+
+                return (
+                  <div key={key} style={{ border:'1px solid #e2e8f0', borderRadius:10, padding:8, background:'#fff' }}>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#334155', marginBottom:6, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {m.name}
+                    </div>
+                    <div style={{ height:120, borderRadius:8, overflow:'hidden', background:'#f8fafc', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:6 }}>
+                      {itemType === 'image' && src && (
+                        <img src={src} alt={m.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                      )}
+                      {itemType === 'video' && src && (
+                        <video src={src} style={{ width:'100%', height:'100%', objectFit:'cover' }} muted />
+                      )}
+                      {!src && <div style={{ color:'#94a3b8', fontSize:12 }}>No media</div>}
+                    </div>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                      <small style={{ color:'#64748b' }}>
+                        {m.fileMime || (m.filePath ? 'file' : (m.url ? 'URL' : ''))}
+                      </small>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeMediaByKey(key); }}
+                        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                        style={{ background:'#fee2e2', color:'#b91c1c', border:'none', borderRadius:6, padding:'4px 8px', cursor:'pointer' }}
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ height:120, borderRadius:8, overflow:'hidden', background:'#f8fafc', display:'flex', alignItems:'center', justifyContent:'center', marginBottom:6 }}>
-                    {form.type === 'image' && (
-                      <img src={m.preview || m.url} alt={m.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-                    )}
-                    {form.type === 'video' && (
-                      <video src={m.preview || m.url} style={{ width:'100%', height:'100%', objectFit:'cover' }} muted />
-                    )}
-                  </div>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                    <small style={{ color:'#64748b' }}>{m.fileMime || 'URL'}</small>
-                    <button type="button" onClick={() => removeMediaAt(idx)} style={iconBtnStyle('#fee2e2', '#b91c1c')}>✕</button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -558,13 +636,13 @@ export default function ContentForm({ initial, onSubmit, onCancel, submitting })
 /* Field wrapper */
 function Field({ label, required, children }) {
   return (
-    <label style={fieldStyle}>
-      <span>
+    <div style={fieldStyle}>
+      <div>
         {label}
         {required && <span style={{ color: '#dc2626' }}> *</span>}
-      </span>
+      </div>
       {children}
-    </label>
+    </div>
   );
 }
 

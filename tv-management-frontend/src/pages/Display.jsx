@@ -81,16 +81,55 @@ export default function Display() {
 
         const allowed = baseItems.filter(c => isAllowedNow(c, tvSchedules));
 
-        // Build the top band text from all allowed text items
-        const texts = allowed
-          .filter(c => c.type === 'text')
-          .map(it => (it.content || it.textContent || it.title || '').trim())
-          .filter(Boolean);
+        // Bottom band: include any text content and text assets
+        const texts = [];
+        for (const c of allowed) {
+          if (c.type === 'text') {
+            const t = (c.content || c.textContent || c.title || '').trim();
+            if (t) texts.push(t);
+          }
+          if (Array.isArray(c.assets)) {
+            c.assets.forEach(a => {
+              if (a?.type === 'text') {
+                const t = (a.title || '').trim();
+                if (t) texts.push(t);
+              }
+            });
+          }
+        }
         const uniq = Array.from(new Set(texts));
         setBandText(uniq.join(' • '));
 
-        // Build visual pages without text items (text is shown as overlay)
-        const built = buildDynamicPages(allowed.filter(c => c.type !== 'text'));
+        // Visual pages: expand image/video assets; skip text (shown in band)
+        const visual = [];
+        for (const c of allowed) {
+          if (Array.isArray(c.assets) && c.assets.length) {
+            for (const a of c.assets) {
+              if (a?.type === 'text') continue;
+              const candidate = {
+                _id: `${c._id || c.id}_${a.title || a.url || Math.random()}`,
+                type: a.type || c.type,
+                url: a.url || '',
+                filePath: a.filePath || undefined,
+                media: a.media || undefined,
+                mediaDataUrl: a.mediaDataUrl,
+                title: c.title || a.title || '',
+                layout: c.layout || 'auto',
+                duration: Number(a.duration) > 0 ? Number(a.duration) : (c.duration || 8),
+                createdAt: c.createdAt
+              };
+              const src = getMediaSrc(candidate);
+              if (!src) continue; // SKIP empty media
+              visual.push(candidate);
+            }
+          } else if (c.type !== 'text') {
+            const src = getMediaSrc(c);
+            if (!src) continue; // SKIP empty legacy
+            visual.push(c);
+          }
+        }
+
+        const built = buildDynamicPages(visual);
         setPages(built);
         setPageIdx(0);
       } catch (e) {
@@ -105,11 +144,10 @@ export default function Display() {
     return () => { mounted = false; };
   }, [resolvedId]);
 
-  // Auto-advance timer based on current page duration
+  // Auto-advance every 5s if there’s more than 1 page
   React.useEffect(() => {
-    if (!pages.length) return;
-    const durMs = (pages[pageIdx]?.duration || 10) * 1000;
-    const t = setTimeout(() => setPageIdx(i => (i + 1) % pages.length), durMs);
+    if (pages.length <= 1) return;
+    const t = setTimeout(() => setPageIdx(i => (i + 1) % pages.length), 5000);
     return () => clearTimeout(t);
   }, [pages, pageIdx]);
 
@@ -241,9 +279,9 @@ export default function Display() {
     const style = document.createElement('style');
     style.id = 'display-ticker-styles';
     style.textContent = `
-      @keyframes ticker-scroll {
+      @keyframes ticker-left {
         0% { transform: translateX(0); }
-        100% { transform: translateX(-50%); }
+        100% { transform: translateX(-100%); }
       }
       @media (prefers-reduced-motion: reduce) {
         .ticker-anim { animation: none !important; }
@@ -268,21 +306,8 @@ export default function Display() {
         touchAction:'none',
         overflow:'hidden'
       }}
-      onMouseDown={onPointerDown}
-      onMouseMove={onPointerMove}
-      onMouseUp={onPointerUp}
-      onTouchStart={onPointerDown}
-      onTouchMove={onPointerMove}
-      onTouchEnd={onPointerUp}
     >
-     
-      {/* Arrows only when there are pages */}
-      {!useFallback && (
-        <div style={{ position:'fixed', inset:0, zIndex:25, pointerEvents:'none' }}>
-          <button aria-label="Previous" onClick={goPrev} style={arrowBtn('left')}>‹</button>
-          <button aria-label="Next" onClick={goNext} style={arrowBtn('right')}>›</button>
-        </div>
-      )}
+      {/* Slide controls removed; auto-advance handles cycling */}
 
       {/* HUD (keep for pages; hidden in fallback because fallback shows time/info centered) */}
       {!useFallback && !hudOff && (
@@ -476,34 +501,31 @@ function decideLayout(count) {
   return 'split4';
 }
 
-// Use the configured API base (or same-origin when serving frontend from Express)
-const API_BASE = import.meta.env?.VITE_API_BASE_URL || window.location.origin;
+// Use backend base (falls back to http://localhost:5000 in dev)
+const API_BASE = (import.meta.env?.VITE_API_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 function getMediaSrc(item) {
-  if (!item) return '';
+  if (!item) return null;
   if (item.mediaDataUrl) return item.mediaDataUrl;
   if (item.filePath) {
     const path = String(item.filePath).replace(/^\/+/, '');
-    return `${API_BASE}/${path}`;
+    return path ? `${API_BASE}/${path}` : null;
   }
   if (item.url) return item.url;
-  const media = item.media;
-  if (media?.contentType && media?.data) {
-    const mime = media.contentType;
-    const data = media.data;
-    if (typeof data === 'string') return `data:${mime};base64,${data}`;
-    const arr = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : null);
+  const m = item.media;
+  if (m?.contentType && m?.data) {
+    if (typeof m.data === 'string') return `data:${m.contentType};base64,${m.data}`;
+    const arr = Array.isArray(m.data?.data) ? m.data.data : (Array.isArray(m.data) ? m.data : null);
     if (arr) {
       const bytes = new Uint8Array(arr);
-      let binary = '';
-      const chunk = 0x8000;
+      let binary = ''; const chunk = 0x8000;
       for (let i = 0; i < bytes.length; i += chunk) {
         binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
       }
-      return `data:${mime};base64,${btoa(binary)}`;
+      return `data:${m.contentType};base64,${btoa(binary)}`;
     }
   }
-  return '';
+  return null; // IMPORTANT
 }
 
 // Add a tiny hook to detect orientation
@@ -528,31 +550,12 @@ function Render({ item, layout }) {
   if (item.type === 'image') {
     const src = getMediaSrc(item);
     if (!src) return null;
-    return (
-      <img
-        src={src}
-        alt={item.title || 'image'}
-        style={mediaFit}
-        draggable={false}
-      />
-    );
+    return <img src={src} alt={item.title || 'image'} style={mediaFit} draggable={false} />;
   }
-
-  // Videos
   if (item.type === 'video') {
     const src = getMediaSrc(item);
     if (!src) return null;
-    return (
-      <video
-        src={src}
-        style={mediaFit}
-        autoPlay
-        loop
-        muted
-        playsInline
-        controls={false}
-      />
-    );
+    return <video src={src} style={mediaFit} autoPlay loop muted playsInline controls={false} />;
   }
 
   // Text is rendered globally in the top band
@@ -571,21 +574,22 @@ function Render({ item, layout }) {
   return null;
 }
 
-// ADD: Ticker band component (dark, minimal)
+// Band: smaller height, starts from left, continuous loop
 function TickerBand({ text, position = 'top' }) {
   const clean = text.replace(/\s*\n+\s*/g, ' • ').replace(/\s{2,}/g, ' ').trim();
   const estChars = Math.max(20, clean.length);
   const duration = Math.min(40, Math.max(14, Math.round(estChars / 3))); // 14–40s
 
   const band = {
-    position: 'relative', // container is fixed by caller
-    height: '14vh',
-    minHeight: 48,
+    position: 'relative',
+    height: '7vh',
+    minHeight: 28,
     background: 'rgba(0,0,0,0.75)',
     borderBottom: position === 'top' ? '1px solid rgba(255,255,255,0.12)' : undefined,
     borderTop: position !== 'top' ? '1px solid rgba(255,255,255,0.12)' : undefined,
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'flex-start',
     overflow: 'hidden',
     padding: '0 12px',
     pointerEvents: 'none'
@@ -598,19 +602,18 @@ function TickerBand({ text, position = 'top' }) {
     alignItems: 'center',
     whiteSpace: 'nowrap',
     willChange: 'transform',
-    animation: `ticker-scroll ${duration}s linear infinite`
+    animation: `ticker-left ${duration}s linear infinite`
   };
 
   const chunk = { display: 'inline-flex', alignItems: 'center', gap: 24, paddingRight: 48 };
-
-  const txt = { color: '#fff', fontSize: '3vmin', lineHeight: 1.2, fontWeight: 700, textShadow: '0 1px 2px rgba(0,0,0,.6)' };
+  const txt = { color: '#fff', fontSize: '2.4vmin', lineHeight: 1.2, fontWeight: 700, textShadow: '0 1px 2px rgba(0,0,0,.6)' };
   const dot = { width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,0.6)' };
 
-  // Duplicate content for seamless loop (translateX -50%)
   return (
     <div style={band}>
       <div style={mask}>
         <div className="ticker-anim" style={track}>
+          {/* duplicate so it loops seamlessly; starts from the very left */}
           <div style={chunk}>
             <span style={txt}>{clean}</span>
             <span style={dot} />

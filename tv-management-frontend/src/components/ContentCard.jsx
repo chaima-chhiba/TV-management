@@ -1,14 +1,21 @@
 // (Minor tweak to support id/_id already done via wrapper above; kept same structure)
 import React from 'react';
 
-function getMediaSrc(item) {
-  if (item?.mediaDataUrl) return item.mediaDataUrl;
-  if (item?.filePath) return `http://localhost:5000/${item.filePath}`;
-  if (item?.url) return item.url;
+function apiBase() {
+  return (import.meta.env?.VITE_API_BASE_URL || window.location.origin).replace(/\/$/, '');
+}
+
+function getMediaSrc(item, asset) {
+  const base = apiBase();
+  // Prefer asset-level media if provided
+  const srcItem = asset || item;
+  if (srcItem?.mediaDataUrl) return srcItem.mediaDataUrl;
+  if (srcItem?.filePath) return `${base}/${String(srcItem.filePath).replace(/^\/+/, '')}`;
+  if (srcItem?.url) return srcItem.url;
   // Build data URL from Buffer-like object
-  if (item?.media?.data && item?.media?.contentType) {
-    const mime = item.media.contentType;
-    const data = item.media.data;
+  if (srcItem?.media?.data && srcItem?.media?.contentType) {
+    const mime = srcItem.media.contentType;
+    const data = srcItem.media.data;
     if (typeof data === 'string') {
       return `data:${mime};base64,${data}`;
     }
@@ -28,6 +35,12 @@ function getMediaSrc(item) {
 }
 
 export default function ContentCard({ item, onDelete, onPreview }) {
+  const count = Array.isArray(item.assets) ? item.assets.length : 0;
+  const firstAsset = count ? item.assets[0] : null;
+  const typeLabel = item.type?.toUpperCase();
+  const extra = count > 1 ? ` • ${count} item(s)` : '';
+  const showType = firstAsset?.type || item.type;
+
   return (
     <div
       style={{
@@ -46,7 +59,7 @@ export default function ContentCard({ item, onDelete, onPreview }) {
           {item.title}
         </div>
         <div style={{fontSize:12, fontWeight:500, letterSpacing:.5, color:'#6366f1'}}>
-          {item.type?.toUpperCase()} • {item.layout || '-'}
+          {typeLabel} • {item.layout || '-'}{extra}
         </div>
       </div>
 
@@ -66,27 +79,27 @@ export default function ContentCard({ item, onDelete, onPreview }) {
         onClick={onPreview}
         title="Click to preview"
       >
-        {item.type === 'image' && (
+        {showType === 'image' && (
           <img
-            src={getMediaSrc(item)}
+            src={getMediaSrc(item, firstAsset)}
             alt={item.title}
             style={{width:'100%', height:'100%', objectFit:'cover'}}
             onError={(e)=>{ e.currentTarget.style.opacity='0.4'; }}
           />
         )}
-        {item.type === 'video' && (
+        {showType === 'video' && (
           <video
-            src={getMediaSrc(item)}
+            src={getMediaSrc(item, firstAsset)}
             style={{width:'100%', height:'100%', objectFit:'cover'}}
             muted
           />
         )}
-        {item.type === 'text' && (
+        {showType === 'text' && (
           <div style={{padding:12, color:'#334155', fontSize:14, lineHeight:1.35, textAlign:'center'}}>
-            {item.content?.slice(0,160) || '—'}
+            {(item.content || firstAsset?.title || '').slice(0,160) || '—'}
           </div>
         )}
-        {item.type !== 'text' && !getMediaSrc(item) && (
+        {showType !== 'text' && !getMediaSrc(item, firstAsset) && (
           <div style={{color:'#94a3b8', fontSize:12}}>No media</div>
         )}
       </div>
